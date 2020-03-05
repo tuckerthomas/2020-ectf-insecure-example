@@ -47,38 +47,38 @@ def main(valid_regions, valid_users, user_secrets, region_secrets, device_dir):
     validDataJson = dumps(allData)
 
     # Add escape characters to valid users and regions JSON
-    escapedValidDataJson = allDataJson.replace("\"", "\\\"")
+    escapedValidDataJson = validDataJson.replace("\"", "\\\"")
 
     # Create device specific key
     device_key = token_hex(32)
 
     # Make device directory
-    if not path.isdir(device_dir):
+    if not path.isdir(device_dir[0]):
         print("real boobs")
-        mkdir(device_dir)
+        mkdir(device_dir[0])
 
     # Make output file path
-    outfile = path.join(device_dir, "device_secrets")
+    outfile = path.join(device_dir[0], "device_secrets")
 
     # Open device_secrets file and write data to it
     with open(outfile, mode="w") as header:
         header.write("""
-        #ifndef SECRETS_H
-        #define SECRETS_H
+#ifndef SECRETS_H
+#define SECRETS_H
 
-        // Device Specific Key
-        const char *KEY_HEX = "{device_key}";
+// Device Specific Key
+const char *KEY_HEX = "{device_key}";
 
-        // JSON Payload of All Users and Regions
-        const char *USER_DATA = "{escapedAllDataJson}";
-
-
-        // JSON Payload of Valid Users and Regions
-        const char *PROVISIONED_USER_DATA = "{escapedValidDataJson}";
+// JSON Payload of All Users and Regions
+const char *USER_DATA = "{escapedAllDataJson}";
 
 
-        #endif // SECRETS_H
-        """.format(device_key=device_key, escapedAllDataJson=escapedAllDataJson, escapedValidDataJson=escapedValidDataJson))
+// JSON Payload of Valid Users and Regions
+const char *PROVISIONED_USER_DATA = "{escapedValidDataJson}";
+
+
+#endif // SECRETS_H
+""".format(device_key=device_key, escapedAllDataJson=escapedAllDataJson, escapedValidDataJson=escapedValidDataJson))
 
 
 
@@ -146,9 +146,9 @@ if __name__ == '__main__':
     print("\n" + "Generating device specific secrets." + "\n\n")
 
     # Parse the contents of user_secrets as JSON data and store
-    user_secrets = load(open(path.abspath(user_secrets)))
+    user_secrets = load(open(path.abspath(str(user_secrets[0]))))
 
     # Parse the contents of region_secrets as JSON data and store
-    region_secrets = load(open(path.abspath(region_secrets)))
+    region_secrets = load(open(path.abspath(str(region_secrets[0]))))
 
     main(valid_regions, valid_users, user_secrets, region_secrets, device_dir)
