@@ -161,14 +161,14 @@ void read_enc_metadata(FILE *fp, int metadata_size) {
 
 }
 
-void read_enc_chunk(FILE *fp, int chunk_size) {
+void read_enc_chunk(FILE *fp, int chunk_size, int buffer_loc) {
 	int chunk_total_size = NONCE_SIZE + MAC_SIZE + chunk_size;
 
 	unsigned char buffer[chunk_total_size];
 
 	fread(buffer, chunk_total_size, 1, fp);
 
-	memcpy((void *)&(c->encSongChunk), buffer, chunk_total_size);
+	memcpy((void *)&(c->encSongBuffer[buffer_loc]), buffer, chunk_total_size);
 
 	//printf("Song chunk nonce: %s\r\n", c->encSongChunk.nonce);
 	//printf("Song chunk tag: %s\r\n", c->encSongChunk.tag);
@@ -180,12 +180,26 @@ void read_enc_chunk(FILE *fp, int chunk_size) {
 
 void *read_enc_chunk_thread(void *fp) {
 	std::cout << "Start sending chunks!" << std::endl;
+
+	std::cout << "Initialize buffer" << std::endl;
+	for (int i = 0; i < ENC_BUFFER_SZ; i++) {
+		int chunk_size = c->chunk_size;
+		read_enc_chunk((FILE *) fp, chunk_size, i);
+	}
+	std::cout << "Buffer finished" << std::endl;
+	c->drm_state = READING_CHUNK; // not the best idea but TODO: Change
+
 	do {
 		while(c->drm_state == WAITING_CHUNK) {
-			int chunk_size = c->chunk_size;
-			std::cout << "Reading chunk of size: " << chunk_size << std::endl;
-			read_enc_chunk((FILE *)fp, chunk_size);
+			for (int i = 0; i < ENC_BUFFER_SZ / 2; i++) {
+				int chunk_size = c->chunk_size;
 
+				// Check for offset
+				int buffer_loc = i + ((ENC_BUFFER_SZ / 2) * c->buffer_offset);
+
+				read_enc_chunk((FILE *)fp, chunk_size, buffer_loc);
+			}
+			std::cout << "Updated buffer" << std::endl;
 			c->drm_state = READING_CHUNK; // not the best idea but TODO: Change
 		}
 		while(c->drm_state == READING_CHUNK) continue;
