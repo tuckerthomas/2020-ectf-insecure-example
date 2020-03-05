@@ -1100,80 +1100,82 @@ CJSON_PUBLIC(cJSON *) cJSON_Parse(const char *value)
 
 #define cjson_min(a, b) ((a < b) ? a : b)
 
-static unsigned char *print(const cJSON * const item, cJSON_bool format, const internal_hooks * const hooks)
-{
-    static const size_t default_buffer_size = 256;
-    printbuffer buffer[1];
-    unsigned char *printed = NULL;
 
-    memset(buffer, 0, sizeof(buffer));
+// static unsigned char *print(const cJSON * const item, cJSON_bool format, const internal_hooks * const hooks)
+// {
+//     static const size_t default_buffer_size = 256;
+//     printbuffer buffer[1];
+//     unsigned char *printed = NULL;
 
-    /* create buffer */
-    buffer->buffer = (unsigned char*) hooks->allocate(default_buffer_size);
-    buffer->length = default_buffer_size;
-    buffer->format = format;
-    buffer->hooks = *hooks;
-    if (buffer->buffer == NULL)
-    {
-        goto fail;
-    }
+//     memset(buffer, 0, sizeof(buffer));
 
-    /* print the value */
-    if (!print_value(item, buffer))
-    {
-        goto fail;
-    }
-    update_offset(buffer);
+//     /* create buffer */
+//     buffer->buffer = (unsigned char*) hooks->allocate(default_buffer_size);
+//     buffer->length = default_buffer_size;
+//     buffer->format = format;
+//     buffer->hooks = *hooks;
+//     if (buffer->buffer == NULL)
+//     {
+//         goto fail;
+//     }
 
-    /* check if reallocate is available */
-    if (hooks->reallocate != NULL)
-    {
-        printed = (unsigned char*) hooks->reallocate(buffer->buffer, buffer->offset + 1);
-        if (printed == NULL) {
-            goto fail;
-        }
-        buffer->buffer = NULL;
-    }
-    else /* otherwise copy the JSON over to a new buffer */
-    {
-        printed = (unsigned char*) hooks->allocate(buffer->offset + 1);
-        if (printed == NULL)
-        {
-            goto fail;
-        }
-        memcpy(printed, buffer->buffer, cjson_min(buffer->length, buffer->offset + 1));
-        printed[buffer->offset] = '\0'; /* just to be sure */
+//     /* print the value */
+//     if (!print_value(item, buffer))
+//     {
+//         goto fail;
+//     }
+//     update_offset(buffer);
 
-        /* free the buffer */
-        hooks->deallocate(buffer->buffer);
-    }
+//     /* check if reallocate is available */
+//     if (hooks->reallocate != NULL)
+//     {
+//         printed = (unsigned char*) hooks->reallocate(buffer->buffer, buffer->offset + 1);
+//         if (printed == NULL) {
+//             goto fail;
+//         }
+//         buffer->buffer = NULL;
+//     }
+//     else /* otherwise copy the JSON over to a new buffer */
+//     {
+//         printed = (unsigned char*) hooks->allocate(buffer->offset + 1);
+//         if (printed == NULL)
+//         {
+//             goto fail;
+//         }
+//         memcpy(printed, buffer->buffer, cjson_min(buffer->length, buffer->offset + 1));
+//         printed[buffer->offset] = '\0'; /* just to be sure */
 
-    return printed;
+//         /* free the buffer */
+//         hooks->deallocate(buffer->buffer);
+//     }
 
-fail:
-    if (buffer->buffer != NULL)
-    {
-        hooks->deallocate(buffer->buffer);
-    }
+//     return printed;
 
-    if (printed != NULL)
-    {
-        hooks->deallocate(printed);
-    }
+// fail:
+//     if (buffer->buffer != NULL)
+//     {
+//         hooks->deallocate(buffer->buffer);
+//     }
 
-    return NULL;
-}
+//     if (printed != NULL)
+//     {
+//         hooks->deallocate(printed);
+//     }
 
-/* Render a cJSON item/entity/structure to text. */
-CJSON_PUBLIC(char *) cJSON_Print(const cJSON *item)
-{
-    return (char*)print(item, true, &global_hooks);
-}
+//     return NULL;
+// }
 
-CJSON_PUBLIC(char *) cJSON_PrintUnformatted(const cJSON *item)
-{
-    return (char*)print(item, false, &global_hooks);
-}
+// /* Render a cJSON item/entity/structure to text. */
+// CJSON_PUBLIC(char *) cJSON_Print(const cJSON *item)
+// {
+//     return (char*)print(item, true, &global_hooks);
+// }
+
+// CJSON_PUBLIC(char *) cJSON_PrintUnformatted(const cJSON *item)
+// {
+//     return (char*)print(item, false, &global_hooks);
+// }
+
 
 CJSON_PUBLIC(char *) cJSON_PrintBuffered(const cJSON *item, int prebuffer, cJSON_bool fmt)
 {
