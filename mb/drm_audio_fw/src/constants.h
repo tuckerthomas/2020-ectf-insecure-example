@@ -47,6 +47,36 @@
 
 #define MAX_METADATA_SZ UID_SZ + (RID_SZ * MAX_REGIONS) + (MAX_USERS * UID_SZ)
 
+// secrets.h data size constants
+#define SIZE_UID 9
+#define SIZE_USERNAME 16
+#define SIZE_HASHEDPIN 257
+#define SIZE_SALT 7
+
+#define SIZE_REGIONID 9
+#define SIZE_REGIONNAME 16
+
+// structs to import secrets.h JSON data into memory
+typedef struct {
+    char uid[SIZE_UID];
+    char username[SIZE_USERNAME];
+    char hashedPin[SIZE_HASHEDPIN];
+    char salt[SIZE_SALT];
+} user_struct;
+
+typedef struct {
+    char regionID[SIZE_REGIONID];
+    char regionName[SIZE_REGIONNAME];
+} region_struct;
+
+typedef struct {
+    char provisioned_userID[SIZE_UID];
+} provisioned_user_struct;
+
+typedef struct {
+    char provisioned_regionID[SIZE_REGIONID];
+} provisioned_region_struct;
+
 
 // LED colors and controller
 struct color {

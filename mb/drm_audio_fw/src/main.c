@@ -3,6 +3,7 @@
  * Audio Digital Rights Management
  */
 
+#include <stdlib.h>
 #include <stdio.h>
 #include "platform.h"
 #include "xparameters.h"
@@ -15,11 +16,12 @@
 #include "xintc.h"
 #include "constants.h"
 #include "sleep.h"
+#include "cJSON.h"
+#include <string.h>
 
 #include <bearssl.h>
 
 //////////////////////// GLOBALS ////////////////////////
-
 
 // audio DMA access
 static XAxiDma sAxiDma;
@@ -47,6 +49,17 @@ volatile cmd_channel *c = (cmd_channel*)SHARED_DDR_BASE;
 // internal state store
 internal_state s;
 
+// hold imported secrets.h JSON data about provisioned users and regions
+provisioned_user_struct provisioned_uid[64];
+provisioned_region_struct provisioned_rid[64];
+
+user_struct device_users[64];
+region_struct device_regions[64];
+
+int NUM_PROVISIONED_REGIONS = 0;
+int NUM_PROVISIONED_USERS = 0;
+int UM_REGIONS = 0;
+int NUM_USERS = 0;
 
 //////////////////////// INTERRUPT HANDLING ////////////////////////
 
@@ -62,11 +75,154 @@ void myISR(void) {
 
 //////////////////////// UTILITY FUNCTIONS ////////////////////////
 
+// pulls secret.h user, region, and provisioned user/region data from JSON struct into C structs
+int parse_user_data(char * data)
+{
+    const  cJSON  *users = NULL;
+    const  cJSON  *user = NULL;
+
+    const  cJSON  *regions = NULL;
+    const  cJSON  *region = NULL;
+
+    int status = 1;
+
+    cJSON *json_data = cJSON_Parse(data);
+
+    if (json_data == NULL)
+    {
+        const char *error_ptr = cJSON_GetErrorPtr();
+        if (error_ptr != NULL)
+        {
+            fprintf(stderr, "Error before: %s\n", error_ptr);
+        }
+        status = 0;
+        cJSON_Delete(json_data);
+        return status;    
+    }
+
+    users = cJSON_GetObjectItemCaseSensitive(json_data, "users");
+    int index = 0;
+    cJSON_ArrayForEach(user, users)
+    {
+        cJSON *uid = cJSON_GetObjectItemCaseSensitive(user, "userid");
+	    cJSON *username = cJSON_GetObjectItemCaseSensitive(user, "userName");
+	    cJSON *hashedpin = cJSON_GetObjectItemCaseSensitive(user, "hashedPin");
+	    cJSON *salt = cJSON_GetObjectItemCaseSensitive(user, "salt");
+
+        
+        if (cJSON_IsString(uid) == 0
+        &&cJSON_IsString(username) == 0
+        &&cJSON_IsString(hashedpin) == 0
+        &&cJSON_IsString(salt) == 0)
+        {
+            status = 0;
+            cJSON_Delete(json_data);
+            return status;
+        }
+        
+
+        device_users[index].uid = (u8)strtoul(uid->valuestring, NULL, 0);
+        strncpy(device_users[index].username, username->valuestring, SIZE_USERNAME);
+        strncpy(device_users[index].hashedPin, hashedpin->valuestring, SIZE_HASHEDPIN);
+        strncpy(device_users[index].salt, salt->valuestring, SIZE_SALT);
+        index++;
+    }
+
+    num_users = index;
+
+    index = 0;
+    regions = cJSON_GetObjectItemCaseSensitive(json_data, "regions");
+    cJSON_ArrayForEach(region, regions)
+    {
+        cJSON *regionID = cJSON_GetObjectItemCaseSensitive(region, "regionID");
+	    cJSON *regionName = cJSON_GetObjectItemCaseSensitive(region, "regionName");
+
+        
+        if (cJSON_IsString(regionID) ==0
+        &&cJSON_IsString(regionName) ==0)
+        {
+            status = 0;
+            cJSON_Delete(json_data);
+            return status;
+        }
+        
+
+        device_regions[index].regionID = (u8)strtoul(regionID->valuestring, NULL, 0);
+        strncpy(device_regions[index].regionName, regionName->valuestring, SIZE_REGIONNAME);
+        index++;
+    }
+
+    num_regions = index;
+
+    cJSON_Delete(json_data);
+    return status;
+}
+
+int parse_provisioned_user_data(char * data)
+{
+    const  cJSON  *provisioned_userIDs = NULL; 
+    const  cJSON  *provisioned_userID = NULL;
+
+    const  cJSON  *provisioned_regionIDs = NULL;
+    const  cJSON  *provisioned_regionID = NULL;
+
+    int status = 1;
+
+    cJSON *json_data = cJSON_Parse(data);
+
+    if (json_data == NULL)
+    {
+        const char *error_ptr = cJSON_GetErrorPtr();
+        if (error_ptr != NULL)
+        {
+            fprintf(stderr, "Error before: %s\n", error_ptr);
+        }
+        status = 0;
+        cJSON_Delete(json_data);
+        return status;    
+    }
+
+    provisioned_userIDs = cJSON_GetObjectItemCaseSensitive(json_data, "provisioned_users");
+    int index = 0;
+    cJSON_ArrayForEach(provisioned_userID, provisioned_userIDs)
+    {
+        cJSON *p_uid = cJSON_GetObjectItemCaseSensitive(provisioned_userID, "provisioned_userid");
+        
+        if (cJSON_IsString(p_uid) == 0)
+        {
+            status = 0;
+            cJSON_Delete(json_data);
+            return status;
+        }
+
+        provisioned_uid[index].provisioned_userID = (u8)strtoul(p_uid->valuestring, NULL, 0);
+        index++;
+    }
+
+    index = 0;
+    provisioned_regionIDs = cJSON_GetObjectItemCaseSensitive(json_data, "provisioned_regions");
+    cJSON_ArrayForEach(provisioned_regionID, provisioned_regionIDs)
+    {
+        cJSON *p_rid = cJSON_GetObjectItemCaseSensitive(provisioned_regionID, "provisioned_regionID");
+        
+        if (cJSON_IsString(p_rid) ==0)
+        {
+            status = 0;
+            cJSON_Delete(json_data);
+            return status;
+        }
+        
+        provisioned_rid[index].provisioned_regionID = (u8)strtoul(p_rid->valuestring, NULL, 0);
+    }
+
+    cJSON_Delete(json_data);
+    return status;
+}
 
 // returns whether an rid has been provisioned
 int is_provisioned_rid(char rid) {
     for (int i = 0; i < NUM_PROVISIONED_REGIONS; i++) {
-        if (rid == PROVISIONED_RIDS[i]) {
+        if (rid == provisioned_rid[i].provisioned_regionID) {
             return TRUE;
         }
     }
@@ -76,9 +232,9 @@ int is_provisioned_rid(char rid) {
 // looks up the region name corresponding to the rid
 int rid_to_region_name(char rid, char **region_name, int provisioned_only) {
     for (int i = 0; i < NUM_REGIONS; i++) {
-        if (rid == REGION_IDS[i] &&
+        if (rid == device_regions[i].regionID &&
             (!provisioned_only || is_provisioned_rid(rid))) {
-            *region_name = (char *)REGION_NAMES[i];
+            *region_name = (char *)device_regions[i].regionName;
             return TRUE;
         }
     }
@@ -92,9 +248,9 @@ int rid_to_region_name(char rid, char **region_name, int provisioned_only) {
 // looks up the rid corresponding to the region name
 int region_name_to_rid(char *region_name, char *rid, int provisioned_only) {
     for (int i = 0; i < NUM_REGIONS; i++) {
-        if (!strcmp(region_name, REGION_NAMES[i]) &&
-            (!provisioned_only || is_provisioned_rid(REGION_IDS[i]))) {
-            *rid = REGION_IDS[i];
+        if (!strcmp(region_name, device_regions[i].regionName) &&
+            (!provisioned_only || is_provisioned_rid(device_regions[i].regionID))) {
+            *rid = device_regions[i].regionID;
             return TRUE;
         }
     }
@@ -108,7 +264,7 @@ int region_name_to_rid(char *region_name, char *rid, int provisioned_only) {
 // returns whether a uid has been provisioned
 int is_provisioned_uid(char uid) {
     for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {
-        if (uid == PROVISIONED_UIDS[i]) {
+        if (uid == provisioned_uid[i].provisioned_userID) {
             return TRUE;
         }
     }
@@ -119,9 +275,9 @@ int is_provisioned_uid(char uid) {
 // looks up the username corresponding to the uid
 int uid_to_username(char uid, char **username, int provisioned_only) {
     for (int i = 0; i < NUM_USERS; i++) {
-        if (uid == USER_IDS[i] &&
+        if (uid == device_users[i].uid &&
             (!provisioned_only || is_provisioned_uid(uid))) {
-            *username = (char *)USERNAMES[i];
+            *username = (char *)device_users[i].username;
             return TRUE;
         }
     }
@@ -135,9 +291,9 @@ int uid_to_username(char uid, char **username, int provisioned_only) {
 // looks up the uid corresponding to the username
 int username_to_uid(char *username, char *uid, int provisioned_only) {
     for (int i = 0; i < NUM_USERS; i++) {
-        if (!strcmp(username, USERNAMES[USER_IDS[i]]) &&
-            (!provisioned_only || is_provisioned_uid(USER_IDS[i]))) {
-            *uid = USER_IDS[i];
+        if (!strcmp(username, device_users[device_users[i].uid].username) &&
+            (!provisioned_only || is_provisioned_uid(device_users[i].uid))) {
+            *uid = device_users[i].uid;
             return TRUE;
         }
     }
@@ -190,7 +346,7 @@ int is_locked() {
         // search for region match
         for (int i = 0; i < s.song_md.num_regions; i++) {
             for (int j = 0; j < (u8)NUM_PROVISIONED_REGIONS; j++) {
-                if (PROVISIONED_RIDS[j] == s.song_md.rids[i]) {
+                if (provisioned_rid[j].provisioned_regionID == s.song_md.rids[i]) {
                     locked = FALSE;
                 }
             }
@@ -350,15 +506,18 @@ void login() {
     } else {
         for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {
             // search for matching username
-            if (!strcmp((void*)c->username, USERNAMES[PROVISIONED_UIDS[i]])) {
+            if (!strcmp((void*)c->username, device_users[provisioned_uid[i].provisioned_userID].username)) {
+                
+                //MAKE FUNCTIONAL WITH HASHED VALUES
+
                 // check if pin matches
-                if (!strcmp((void*)c->pin, PROVISIONED_PINS[i])) {
+                if (!strcmp((void*)c->pin, device_users[i].hashedPin)) {
                     //update states
                     s.logged_in = 1;
                     c->login_status = 1;
                     memcpy(s.username, (void*)c->username, USERNAME_SZ);
                     memcpy(s.pin, (void*)c->pin, MAX_PIN_SZ);
-                    s.uid = PROVISIONED_UIDS[i];
+                    s.uid = provisioned_uid[i].provisioned_userID;
                     mb_printf("Logged in for user '%s'\r\n", c->username);
                     return;
                 } else {
@@ -400,11 +559,11 @@ void query_player() {
     c->query.num_users = NUM_PROVISIONED_USERS;
 
     for (int i = 0; i < NUM_PROVISIONED_REGIONS; i++) {
-        strcpy((char *)q_region_lookup(c->query, i), REGION_NAMES[PROVISIONED_RIDS[i]]);
+        strcpy((char *)q_region_lookup(c->query, i), device_regions[provisioned_rid[i].provisioned_regionID].regionName);
     }
 
     for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {
-        strcpy((char *)q_user_lookup(c->query, i), USERNAMES[i]);
+        strcpy((char *)q_user_lookup(c->query, i), device_users[i].username);
     }
 
     mb_printf("Queried player (%d regions, %d users)\r\n", c->query.num_regions, c->query.num_users);
@@ -733,6 +892,17 @@ int main() {
     unsigned char key[32];
 
     hextobin(key, KEY_HEX);
+
+    // import secrets.h JSON into struct
+    if(parse_user_data(user_data) == 0)
+    {
+        printf("Status returned failed");
+    }
+
+    if(parse_provisioned_user_data(provisioned_user_data) == 0)
+    {
+        printf("Status returned failed");
+    }
 
     // Handle commands forever
     while(1) {
