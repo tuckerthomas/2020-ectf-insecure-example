@@ -70,11 +70,11 @@ def main(valid_regions, valid_users, user_secrets, region_secrets, device_dir):
         const char *KEY_HEX = "{device_key}";
 
         // JSON Payload of All Users and Regions
-        const char *user_data = "{escapedAllDataJson}";
+        const char *USER_DATA = "{escapedAllDataJson}";
 
 
         // JSON Payload of Valid Users and Regions
-        const char *user_data = "{escapedValidDataJson}";
+        const char *PROVISIONED_USER_DATA = "{escapedValidDataJson}";
 
 
         #endif // SECRETS_H
