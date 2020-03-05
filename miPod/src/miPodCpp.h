@@ -39,10 +39,12 @@
 #define NONCE_SIZE 12
 #define WAVE_HEADER_SZ 44
 #define META_DATA_ALLOC 4
-#define SONG_CHUNK_SZ 32000
+#define SONG_CHUNK_SZ 48000
 #define SONG_CHUNK_RAM 1000
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
+
+#define ENC_BUFFER_SZ 120
 
 // struct to interpret shared buffer as a query
 typedef struct {
@@ -129,6 +131,7 @@ typedef volatile struct __attribute__((__packed__)) {
     int chunk_size;
     int chunk_nums;
     int chunk_remainder;
+    unsigned int buffer_offset;
 
     // shared buffer is either a drm song or a query
     union {
@@ -137,6 +140,7 @@ typedef volatile struct __attribute__((__packed__)) {
         encryptedWaveheader encWaveHeader;
         encryptedMetadata encMetadata;
         encryptedSongChunk encSongChunk;
+        encryptedSongChunk encSongBuffer[60];
         char buf[MAX_SONG_SZ]; // sets correct size of cmd_channel for allocation
     };
 } cmd_channel;
