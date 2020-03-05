@@ -58,7 +58,7 @@ region_struct device_regions[64];
 
 int NUM_PROVISIONED_REGIONS = 0;
 int NUM_PROVISIONED_USERS = 0;
-int UM_REGIONS = 0;
+int NUM_REGIONS = 0;
 int NUM_USERS = 0;
 
 //////////////////////// INTERRUPT HANDLING ////////////////////////
@@ -128,7 +128,7 @@ int parse_user_data(char * data)
         index++;
     }
 
-    num_users = index;
+    NUM_USERS = index;
 
     index = 0;
     regions = cJSON_GetObjectItemCaseSensitive(json_data, "regions");
@@ -152,7 +152,7 @@ int parse_user_data(char * data)
         index++;
     }
 
-    num_regions = index;
+    NUM_REGIONS = index;
 
     cJSON_Delete(json_data);
     return status;
@@ -199,6 +199,8 @@ int parse_provisioned_user_data(char * data)
         index++;
     }
 
+    NUM_PROVISIONED_USERS = index;
+
     index = 0;
     provisioned_regionIDs = cJSON_GetObjectItemCaseSensitive(json_data, "provisioned_regions");
     cJSON_ArrayForEach(provisioned_regionID, provisioned_regionIDs)
@@ -214,6 +216,8 @@ int parse_provisioned_user_data(char * data)
         
         provisioned_rid[index].provisioned_regionID = (u8)strtoul(p_rid->valuestring, NULL, 0);
     }
+
+    NUM_PROVISIONED_REGIONS = index;
 
     cJSON_Delete(json_data);
     return status;
