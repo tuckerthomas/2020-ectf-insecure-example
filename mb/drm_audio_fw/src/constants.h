@@ -38,7 +38,8 @@
 #define META_DATA_ALLOC 4
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
-#define SONG_CHUNK_SZ 32000
+#define SONG_CHUNK_SZ 20480
+#define SONG_CHUNK_BUFFER 1000
 #define ENC_CHUNK_SZ SONG_CHUNK_SZ + MAC_SIZE
 
 #define RID_SZ 8
@@ -47,33 +48,31 @@
 #define MAX_METADATA_SZ UID_SZ + (RID_SZ * MAX_REGIONS) + (MAX_USERS * UID_SZ)
 
 // secrets.h data size constants
-#define SIZE_UID 9
 #define SIZE_USERNAME 16
 #define SIZE_HASHEDPIN 257
 #define SIZE_SALT 7
 
-#define SIZE_REGIONID 9
 #define SIZE_REGIONNAME 16
 
 // structs to import secrets.h JSON data into memory
 typedef struct {
-    char uid[SIZE_UID];
+    u8 uid;
     char username[SIZE_USERNAME];
     char hashedPin[SIZE_HASHEDPIN];
     char salt[SIZE_SALT];
 } user_struct;
 
 typedef struct {
-    char regionID[SIZE_REGIONID];
+    u8 regionID;
     char regionName[SIZE_REGIONNAME];
 } region_struct;
 
 typedef struct {
-    char provisioned_userID[SIZE_UID];
+    u8 provisioned_userID;
 } provisioned_user_struct;
 
 typedef struct {
-    char provisioned_regionID[SIZE_REGIONID];
+    u8 provisioned_regionID;
 } provisioned_region_struct;
 
 
@@ -143,7 +142,7 @@ typedef struct __attribute__ ((__packed__)) {
 	unsigned char metadata[];
 } encryptedMetadata;
 
-#define get_metadata(m) ((unsigned char *)&m + NONCE_SIZE + MAC_SIZE)
+#define get_metadata(m) ((unsigned char *)(&m.metadata))
 
 typedef struct __attribute__ ((__packed__)) {
 	unsigned char nonce[NONCE_SIZE];

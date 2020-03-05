@@ -295,7 +295,7 @@ int uid_to_username(char uid, char **username, int provisioned_only) {
 // looks up the uid corresponding to the username
 int username_to_uid(char *username, char *uid, int provisioned_only) {
     for (int i = 0; i < NUM_USERS; i++) {
-        if (!strcmp(username, device_users[device_users[i].uid].username) &&
+        if (!strcmp(username, device_users[(int)device_users[i].uid].username) &&
             (!provisioned_only || is_provisioned_uid(device_users[i].uid))) {
             *uid = device_users[i].uid;
             return TRUE;
@@ -513,7 +513,7 @@ void login() {
     } else {
         for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {
             // search for matching username
-            if (!strcmp((void*)c->username, device_users[provisioned_uid[i].provisioned_userID].username)) {
+            if (!strcmp((void*)c->username, device_users[(int)provisioned_uid[i].provisioned_userID].username)) {
                 
                 //MAKE FUNCTIONAL WITH HASHED VALUES
 
@@ -566,7 +566,7 @@ void query_player() {
     c->query.num_users = NUM_PROVISIONED_USERS;
 
     for (int i = 0; i < NUM_PROVISIONED_REGIONS; i++) {
-        strcpy((char *)q_region_lookup(c->query, i), device_regions[provisioned_rid[i].provisioned_regionID].regionName);
+        strcpy((char *)q_region_lookup(c->query, i), device_regions[(int)provisioned_rid[i].provisioned_regionID].regionName);
     }
 
     for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {
