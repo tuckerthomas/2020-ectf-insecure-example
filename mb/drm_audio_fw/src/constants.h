@@ -38,14 +38,9 @@
 #define META_DATA_ALLOC 4
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
-#define SONG_CHUNK_SZ 32000
+#define SONG_CHUNK_SZ 48000
 #define ENC_CHUNK_SZ SONG_CHUNK_SZ + MAC_SIZE
-
-#define RID_SZ 8
-#define UID_SZ 8
-
-#define MAX_METADATA_SZ UID_SZ + (RID_SZ * MAX_REGIONS) + (MAX_USERS * UID_SZ)
-
+#define ENC_BUFFER_SZ 120
 
 // LED colors and controller
 struct color {
@@ -147,6 +142,7 @@ typedef volatile struct __attribute__((__packed__)) {
     u32 chunk_size;
     u32 chunk_nums;
     u32 chunk_remainder;
+    u32 buffer_offset;
 
     // shared buffer is either a drm song or a query
     union {
@@ -155,6 +151,8 @@ typedef volatile struct __attribute__((__packed__)) {
         encryptedWaveheader encWaveHeaderMeta;
         encryptedMetadata encMetadata;
         encryptedSongChunk encSongChunk;
+        encryptedSongChunk encSongBuffer[ENC_BUFFER_SZ];
+        char buf[MAX_SONG_SZ]; // sets correct size of cmd_channel for allocation
     };
 } cmd_channel;
 
@@ -178,6 +176,7 @@ typedef struct {
     char pin[MAX_PIN_SZ];       // logged on pin
     song_md song_md;            // current song metadata
     char drm_state;				// drm state
+    u8 buffer_offset;
 } internal_state;
 
 
