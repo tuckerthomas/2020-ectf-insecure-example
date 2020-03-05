@@ -304,7 +304,7 @@ int read_metadata(unsigned char *key, int metadata_size, encryptedMetadata *meta
 	return 1;
 }
 
-int read_chunks(unsigned char *key, int chunk_size, int chunk_num, int buffer_loc) {
+int read_chunks(unsigned char *key, int chunk_size, int chunk_num, int buffer_loc, u32 *fifo_ptr) {
 	static unsigned char encrypt_chunk_buffer[SONG_CHUNK_SZ];
 	//mb_printf("Reading chunk %i, with chunk_size: %i \r\n", chunk_num, chunk_size);
 	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
@@ -320,14 +320,13 @@ int read_chunks(unsigned char *key, int chunk_size, int chunk_num, int buffer_lo
 	br_poly1305_ctmul_run(key, nonce, encrypt_chunk_buffer, chunk_size, &aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 0);
 
 	if (memcmp(tag_buffer, tag, MAC_SIZE) == 0) {
-		u32 counter = 0, rem, cp_num, cp_xfil_cnt, offset, dma_cnt, length, *fifo_fill;
-	    mb_printf("Reading Audio File...");
+		u32 counter = 0, rem, cp_num, cp_xfil_cnt, offset, dma_cnt, length;
+	    //mb_printf("Reading Audio File...");
 	    load_song_md();
 
 	    length = chunk_size;
 
 	    rem = length;
-	    fifo_fill = (u32 *)XPAR_FIFO_COUNT_AXI_GPIO_0_BASEADDR;
 		while (rem > 0) {
 			// calculate write size and offset
 			cp_num = (rem > CHUNK_SZ) ? CHUNK_SZ : rem;
@@ -342,14 +341,13 @@ int read_chunks(unsigned char *key, int chunk_size, int chunk_num, int buffer_lo
 			cp_xfil_cnt = cp_num;
 
 			while (cp_xfil_cnt > 0) {
-
 				// polling while loop to wait for DMA to be ready
 				// DMA must run first for this to yield the proper state
 				// rem != length checks for first run
-				while (XAxiDma_Busy(&sAxiDma, XAXIDMA_DMA_TO_DEVICE) && rem != length && *fifo_fill < (FIFO_CAP - 32));
+				while (XAxiDma_Busy(&sAxiDma, XAXIDMA_DMA_TO_DEVICE) && rem != length && *fifo_ptr < (FIFO_CAP - 32));
 
 				// do DMA
-				dma_cnt = (FIFO_CAP - *fifo_fill > cp_xfil_cnt) ? FIFO_CAP - *fifo_fill : cp_xfil_cnt;
+				dma_cnt = (FIFO_CAP - *fifo_ptr > cp_xfil_cnt) ? FIFO_CAP - *fifo_ptr : cp_xfil_cnt;
 				fnAudioPlay(sAxiDma, offset, dma_cnt);
 				cp_xfil_cnt -= dma_cnt;
 			}
@@ -656,10 +654,7 @@ void play_encrypted_song(unsigned char *key) {
 	// Initialize buffer offset;
 	int buffer_offset = 0;
 
-	mb_printf("Reading Audio File...\r\n");
-
-	// write entire file to two-block codec fifo
-	// writes to one block while the other is being played
+	u32 *fifo_fill = (u32 *)XPAR_FIFO_COUNT_AXI_GPIO_0_BASEADDR;
 
 	while (1) {
 		//mb_printf("In Play loop\r\n");
@@ -684,13 +679,13 @@ void play_encrypted_song(unsigned char *key) {
 				for (int i = 0; i < ENC_BUFFER_SZ / 2; i++) {
 					int buffer_loc = i + ((ENC_BUFFER_SZ / 2) * buffer_offset);
 					if (chunk_counter < chunks_to_read) {
-						if (read_chunks(key, SONG_CHUNK_SZ, chunk_counter, buffer_loc) == 0) {
+						if (read_chunks(key, SONG_CHUNK_SZ, chunk_counter, buffer_loc, fifo_fill) == 0) {
 							chunk_counter++;
 						} else {
 							return;
 						}
 					} else if (chunk_counter == chunks_to_read) {
-						if (read_chunks(key, chunk_remainder, chunk_counter, buffer_loc) == 0) {
+						if (read_chunks(key, chunk_remainder, chunk_counter, buffer_loc, fifo_fill) == 0) {
 							break;
 						} else {
 							return;
