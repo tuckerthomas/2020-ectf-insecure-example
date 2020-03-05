@@ -36,7 +36,7 @@ def decrypt_song(keys_loc, infile, outfile):
     wave_header_size = 44
     metadata_size_allocation = 4
     encrypted_wave_header_size = wave_header_size + metadata_size_allocation + mac_size
-    chunk_size = 20480
+    chunk_size = 48000
     
     print("Setting chunksize to " + str(chunk_size) + " bytes")
 
@@ -109,9 +109,9 @@ def decrypt_song(keys_loc, infile, outfile):
 
     #reads individual chunks
     for i in range(1, chunk_to_read + 1):
-        print("Read chunk: " + str(i))
+        #print("Read chunk: " + str(i))
         nonce = encrypted_song.read(hash_byte_size)
-        print("Chunk " + str(i) + " Nonce: " + str(nonce))
+        #print("Chunk " + str(i) + " Nonce: " + str(nonce))
         aad = int.to_bytes(i, aad_size, 'little')
         encrypted_chunk_tag = encrypted_song.read(mac_size)
         encrypted_chunk_wo_tag = encrypted_song.read(chunk_size)
@@ -124,6 +124,12 @@ def decrypt_song(keys_loc, infile, outfile):
 
         #writes out decrypted version of the song
         decrypted_song.write(song_chunk)
+
+        if i == 1:
+            print("Read chunk: " + str(i))
+            print("Chunk " + str(i) + " Nonce: " + str(nonce))
+            print("Chunk " + str(i) + " Tag: " + str(encrypted_chunk_tag))
+            print("Chunk " + str(i) + " Decrypted Chunk :" + str(song_chunk))
 
     #nonce to decrypt remainder
     nonce = encrypted_song.read(hash_byte_size)
