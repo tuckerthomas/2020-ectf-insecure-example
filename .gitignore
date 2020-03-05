@@ -12,10 +12,7 @@ BOOT
 .DS_Store
 miPod/Debug
 miPod/.settings
-<<<<<<< HEAD
 mb/miPod/Debug
-=======
->>>>>>> c7fb1d4a0afc92f30aad2209d7e078fd9e5ba949
 mb/drm_audio_fw/Debug
 mb/drm_audio_fw/src/secrets.h
 tools/device
