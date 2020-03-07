@@ -2,6 +2,7 @@ BOOT.bin
 BOOT
 *.elf
 *.o
+*.a
 *.bif
 *.d
 *.size
