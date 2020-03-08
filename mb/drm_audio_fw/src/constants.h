@@ -176,6 +176,7 @@ typedef volatile struct __attribute__((__packed__)) {
     u32 chunk_size;
     u32 chunk_nums;
     u32 chunk_remainder;
+    u32 buffer_offset;
 
     // shared buffer is either a drm song or a query
     union {
@@ -184,6 +185,8 @@ typedef volatile struct __attribute__((__packed__)) {
         encryptedWaveheader encWaveHeaderMeta;
         encryptedMetadata encMetadata;
         encryptedSongChunk encSongChunk;
+        encryptedSongChunk encSongBuffer[ENC_BUFFER_SZ];
+        char buf[MAX_SONG_SZ]; // sets correct size of cmd_channel for allocation
     };
 } cmd_channel;
 
@@ -208,6 +211,7 @@ typedef struct {
     song_md song_md;            // current song metadata
     purdue_md purdue_md;
     char drm_state;				// drm state
+    u8 buffer_offset;
 } internal_state;
 
 

@@ -30,6 +30,7 @@ mb/Cora-Z7-07S/ps7_init_gpl.h
 # Eclipse leftovers/Debug folders
 miPod/Debug
 miPod/.settings
+mb/miPod/Debug
 mb/drm_audio_fw/Debug
 
 # Xilinx leftovers
