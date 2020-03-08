@@ -23,12 +23,15 @@
 #define mb_printf(...) xil_printf(MB_PROMPT __VA_ARGS__)
 
 // protocol constants
-#define MAX_REGIONS 64
-#define REGION_NAME_SZ 64
+#define MAX_REGIONS 32
+#define REGION_NAME_SZ 16
 #define MAX_USERS 64
-#define USERNAME_SZ 64
-#define MAX_PIN_SZ 64
+#define USERNAME_SZ 16
+#define MAX_PIN_SZ 8
 #define MAX_SONG_SZ (1<<25)
+
+#define HASHPIN_SZ 32
+#define SALT_SZ 7
 
 #define CHUNK_TIME_SEC 1
 #define AUDIO_SAMPLING_RATE 48000
@@ -42,29 +45,17 @@
 #define SONG_CHUNK_BUFFER 1000
 #define ENC_CHUNK_SZ SONG_CHUNK_SZ + MAC_SIZE
 
-#define RID_SZ 8
-#define UID_SZ 8
-
-#define MAX_METADATA_SZ UID_SZ + (RID_SZ * MAX_REGIONS) + (MAX_USERS * UID_SZ)
-
-// secrets.h data size constants
-#define SIZE_USERNAME 16
-#define SIZE_HASHEDPIN 257
-#define SIZE_SALT 7
-
-#define SIZE_REGIONNAME 16
-
 // structs to import secrets.h JSON data into memory
 typedef struct {
     u8 uid;
-    char username[SIZE_USERNAME];
-    char hashedPin[SIZE_HASHEDPIN];
-    char salt[SIZE_SALT];
+    char username[USERNAME_SZ];
+    char hashedPin[HASHPIN_SZ];
+    char salt[SALT_SZ];
 } user_struct;
 
 typedef struct {
     u8 regionID;
-    char regionName[SIZE_REGIONNAME];
+    char regionName[REGION_NAME_SZ];
 } region_struct;
 
 typedef struct {
@@ -74,7 +65,6 @@ typedef struct {
 typedef struct {
     u8 provisioned_regionID;
 } provisioned_region_struct;
-
 
 // LED colors and controller
 struct color {

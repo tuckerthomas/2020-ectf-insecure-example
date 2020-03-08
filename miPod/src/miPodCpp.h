@@ -8,17 +8,21 @@
 #ifndef SRC_MIPOD_H_
 #define SRC_MIPOD_H_
 
+#import <stdint.h>
 
 // miPod constants
 #define USR_CMD_SZ 64
 
 // protocol constants
-#define MAX_REGIONS 64
-#define REGION_NAME_SZ 64
+#define MAX_REGIONS 32
+#define REGION_NAME_SZ 16
 #define MAX_USERS 64
-#define USERNAME_SZ 64
-#define MAX_PIN_SZ 64
+#define USERNAME_SZ 16
+#define MAX_PIN_SZ 8
 #define MAX_SONG_SZ (1<<25)
+
+#define HASHPIN_SZ 32
+#define SALT_SZ 7
 
 // printing utility
 #define MP_PROMPT "MP> "
@@ -43,6 +47,27 @@
 #define SONG_CHUNK_RAM 1000
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
+
+// structs to import secrets.h JSON data into memory
+typedef struct {
+    uint8_t uid;
+    char username[USERNAME_SZ];
+    char hashedPin[HASHPIN_SZ];
+    char salt[SALT_SZ];
+} user_struct;
+
+typedef struct {
+    uint8_t regionID;
+    char regionName[REGION_NAME_SZ];
+} region_struct;
+
+typedef struct {
+    uint8_t provisioned_userID;
+} provisioned_user_struct;
+
+typedef struct {
+    uint8_t provisioned_regionID;
+} provisioned_region_struct;
 
 // struct to interpret shared buffer as a query
 typedef struct {

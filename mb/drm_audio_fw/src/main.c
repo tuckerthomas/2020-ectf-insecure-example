@@ -404,7 +404,7 @@ void query_player() {
     c->query.num_users = NUM_PROVISIONED_USERS;
 
     for (int i = 0; i < NUM_PROVISIONED_REGIONS; i++) {
-        strcpy((char *)q_region_lookup(c->query, i), device_regions[(int)provisioned_rid[i].provisioned_regionID].regionName);
+        strcpy((char *)q_region_lookup(c->query, i), device_regions[i].regionName);
     }
 
     for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {

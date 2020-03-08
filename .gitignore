@@ -9,6 +9,12 @@ BOOT
 *.wav
 *.drm
 *.vagrant
+mb/Cora-Z7-07S/ps7_init.c
+mb/Cora-Z7-07S/ps7_init.h
+mb/Cora-Z7-07S/ps7_init.html
+mb/Cora-Z7-07S/ps7_init.tcl
+mb/Cora-Z7-07S/ps7_init_gpl.c
+mb/Cora-Z7-07S/ps7_init_gpl.h
 .vscode/
 .DS_Store
 miPod/Debug
