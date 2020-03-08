@@ -39,4 +39,5 @@ mb/drm_audio_fw/Debug
 # Secret sauce 
 mb/drm_audio_fw/src/secrets.h
 tools/device
+keys.json
 *.bin
