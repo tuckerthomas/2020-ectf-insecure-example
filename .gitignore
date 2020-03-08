@@ -5,7 +5,6 @@ BOOT
 # compile c files/other c files
 *.elf
 *.o
-*.a
 *.bif
 *.d
 *.size
