@@ -282,11 +282,8 @@ int read_metadata(unsigned char *key, encryptedMetadata *metadata) {
 
 	memcpy(nonce, (unsigned char *)&(c->encMetadata.nonce), NONCE_SIZE);
 	memcpy(tag, (unsigned char *)&(c->encMetadata.tag), MAC_SIZE);
-	memcpy(metadata_buffer, (unsigned char *) &(c->encMetadata.metadata), metadata_size);
+	memcpy(metadata_buffer, (unsigned char *) &(c->encMetadata.metadata), METADATA_SZ);
 	//memcpy(metadata_buffer, get_metadata(c->encMetadata), metadata_size);
-
-	mb_printf("Reading metadata of size: %i\r\n", metadata_size);
-	//mb_printf("Read %s\r\n", metadata_buffer);
 
 	br_poly1305_ctmul_run(key, nonce, metadata_buffer, METADATA_SZ, aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 0);
 

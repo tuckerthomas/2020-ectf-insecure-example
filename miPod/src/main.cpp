@@ -541,7 +541,7 @@ void share_enc_song(std::string song_name, std::string& username) {
 	unsigned int length;
 
 	// Create a buffer for the read metadata
-	char encryptedMetadataBuffer[ENC_METADATA_SIZE];
+	char encryptedMetadataBuffer[ENC_METADATA_SZ];
 
 	// Open the file in read(byte) mode
 	fd = fopen(song_name.c_str(), "rb");
@@ -551,10 +551,10 @@ void share_enc_song(std::string song_name, std::string& username) {
 	}
 
 	// Read the encrypted metadata into the buffer
-	fread(encryptedMetadataBuffer, ENC_METADATA_SIZE, 1, fd);
+	fread(encryptedMetadataBuffer, ENC_METADATA_SZ, 1, fd);
 
 	// Copy the local buffer to the command buffer
-	memcpy((encryptedMetadata *)&c->encMetadata, encryptedMetadataBuffer, ENC_METADATA_SIZE);
+	memcpy((encryptedMetadata *)&c->encMetadata, encryptedMetadataBuffer, ENC_METADATA_SZ);
 
 	// Check username argument
 	if (username.empty()) {
@@ -588,7 +588,7 @@ void share_enc_song(std::string song_name, std::string& username) {
 	fseek(fd, ENC_WAVE_HEADER_SZ, SEEK_SET);
 
 	// Write new metadata
-	fwrite((encryptedMetadata *)&c->encMetadata, ENC_METADATA_SIZE, 1, fd);
+	fwrite((encryptedMetadata *)&c->encMetadata, ENC_METADATA_SZ, 1, fd);
 
 	fclose(fd);
 	std::cout << "Finished writing file\r\n";

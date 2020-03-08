@@ -38,9 +38,10 @@
 #define MAC_SIZE 16
 #define WAVE_HEADER_SZ 44
 #define METADATA_SZ 100
+#define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + NONCE_SIZE + MAC_SIZE
+#define ENC_METADATA_SZ METADATA_SZ + NONCE_SIZE + MAC_SIZE
 #define META_DATA_ALLOC 4
 #define SONG_CHUNK_SZ 48000
-#define SONG_CHUNK_RAM 1000
 
 // structs to import secrets.h JSON data into memory
 typedef struct {
