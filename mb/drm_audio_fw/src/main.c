@@ -131,9 +131,9 @@ int uid_to_username(char uid, char **username, int provisioned_only) {
 
 
 // looks up the uid corresponding to the username
-int username_to_uid(char *username, char *uid, int provisioned_only) {
+int username_to_uid(char *username, u8 *uid, int provisioned_only) {
     for (int i = 0; i < NUM_USERS; i++) {
-        if (!strcmp(username, device_users[(int)device_users[i].uid].username) &&
+        if (!strcmp(username, device_users[i].username) &&
             (!provisioned_only || is_provisioned_uid(device_users[i].uid))) {
             *uid = device_users[i].uid;
             return TRUE;
@@ -155,7 +155,6 @@ void load_song_md() {
     memcpy(s.song_md.rids, (void *)get_drm_rids(c->song), s.song_md.num_regions);
     memcpy(s.song_md.uids, (void *)get_drm_uids(c->song), s.song_md.num_users);
 }
-
 
 // checks if the song loaded into the shared buffer is locked for the current user
 int is_locked() {
@@ -275,23 +274,22 @@ unsigned int read_header(unsigned char *key, waveHeaderMetaStruct *waveHeaderMet
 	return 1;
 }
 
-int read_metadata(unsigned char *key, int metadata_size, encryptedMetadata *metadata) {
+int read_metadata(unsigned char *key, encryptedMetadata *metadata) {
 	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
 	unsigned char aad[10] = "meta_data";
 	unsigned char tag_buffer[MAC_SIZE];
-	unsigned char metadata_buffer[metadata_size];
+	unsigned char metadata_buffer[METADATA_SZ];
 
 	memcpy(nonce, (void *)c->encMetadata.nonce, NONCE_SIZE);
 	memcpy(tag, (void *)c->encMetadata.tag, MAC_SIZE);
-	memcpy(metadata_buffer, get_metadata(c->encMetadata), metadata_size);
+	memcpy(metadata_buffer, get_metadata(c->encMetadata), METADATA_SZ);
 
-	mb_printf("Reading metadata of size: %i\r\n", metadata_size);
-	//mb_printf("Read %s\r\n", metadata_buffer);
-
-	br_poly1305_ctmul_run(key, nonce, metadata_buffer, metadata_size, aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 0);
+	br_poly1305_ctmul_run(key, nonce, metadata_buffer, METADATA_SZ, aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 0);
 
 	if (memcmp(tag_buffer, tag, MAC_SIZE) == 0) {
 		mb_printf("Metadata validated\r\n");
+		// Copy metadata into local state
+		memcpy(&s.purdue_md, metadata_buffer, METADATA_SZ);
 		set_waiting_chunk();
 		return 0;
 	} else {
@@ -336,11 +334,39 @@ int read_chunks(unsigned char *key, unsigned char *chunk_ptr, int chunk_size, in
 	return 1;
 }
 
+void encryptMetaData(unsigned char *key, char *metadata, encryptedMetadata *enc_metadata) {
+	char nonce[NONCE_SIZE];
+	char aad[] = "meta_data";
+	char tag_buffer[MAC_SIZE];
 
+	// Start nonce calculation
+    br_sha256_context *ctx;
 
+    br_sha256_init(ctx); // TODO: Check
+
+    if (ctx == NULL) {
+    	mb_printf("SHA256 Init failed\r\n");
+    }
+
+    br_sha256_update(ctx, metadata, METADATA_SZ);
+    char sha_compute[br_sha256_SIZE];
+    br_sha256_out(ctx, sha_compute);
+
+    // Pull the first 16 bytes for the nonce
+    memcpy(nonce, sha_compute, NONCE_SIZE);
+
+    // Encrypt the metadata
+	br_poly1305_ctmul_run(key, nonce, metadata, METADATA_SZ, &aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 1);
+
+	// Copy encrypted metadata to the command buffer
+	memcpy(enc_metadata->nonce, nonce, NONCE_SIZE);
+	memcpy(enc_metadata->metadata, metadata, METADATA_SZ);
+	memcpy(enc_metadata->tag, tag_buffer, MAC_SIZE);
+
+	return;
+}
 
 //////////////////////// COMMAND FUNCTIONS ////////////////////////
-
 
 // attempt to log in to the credentials in the shared buffer
 void login() {
@@ -481,6 +507,56 @@ void share_song() {
     // update file size
     c->song.file_size += shift;
     c->song.wav_size  += shift;
+
+    mb_printf("Shared song with '%s'\r\n", c->username);
+}
+
+// add a user to the song's list of users
+void share_enc_song(unsigned char *key) {
+    u8 uid;
+
+    encryptedMetadata metadata;
+    read_metadata(key, &metadata);
+
+    // Check if a user is logged in
+    if (!s.logged_in) {
+        mb_printf("No user is logged in. Cannot share song\r\n");
+        c->song.wav_size = 0;
+        return;
+    // Check if the user that is logged in is the owner of the song
+    } else if (s.uid != s.purdue_md.owner_id) {
+        mb_printf("User '%s' is not song's owner. Cannot share song\r\n", s.username);
+        c->song.wav_size = 0;
+        return;
+    // Check if the username is a valid user
+    } else if (!username_to_uid((char *)c->username, &uid, TRUE)) {
+        mb_printf("Username not found\r\n");
+        c->song.wav_size = 0;
+        return;
+    }
+
+    // Create spot for new metadata
+    purdue_md newMetaData;
+
+    // Copy data into new metadata
+    newMetaData.owner_id = s.purdue_md.owner_id;
+    newMetaData.num_regions = s.purdue_md.num_regions;
+    newMetaData.num_users = s.purdue_md.num_users;
+
+    // TODO: Check to set if there's already a max amount of users
+    // Increase shared users
+    for (int i = 0; i < s.purdue_md.num_users; i++) {
+    	newMetaData.provisioned_users[i] = s.purdue_md.provisioned_users[i];
+    }
+
+    // Add the new userid
+    newMetaData.provisioned_regions[newMetaData.num_users++] = uid;
+
+    // Prepare the new metadata to be encrypted
+    char metadata_buffer[METADATA_SZ];
+
+    // Encrypt the new metadata and copy it into the command buffer
+    encryptMetaData(key, metadata_buffer, (encryptedMetadata *)&c->encMetadata);
 
     mb_printf("Shared song with '%s'\r\n", c->username);
 }
@@ -640,7 +716,7 @@ void play_encrypted_song(unsigned char *key) {
 
 			switch (c->cmd) {
 			case READ_METADATA:
-				if (read_metadata(key, metadata_size, &metadata) == 0) {
+				if (read_metadata(key, &metadata) == 0) {
 					c->total_chunks = chunks_to_read;
 					c->chunk_size = SONG_CHUNK_SZ;
 					c->chunk_remainder = chunk_remainder;
@@ -780,6 +856,9 @@ int main() {
             case SHARE:
                 share_song();
                 break;
+            case ENC_SHARE:
+            	share_enc_song(key);
+            	break;
             case PLAY:
                 play_song();
                 mb_printf("Done Playing Song\r\n");

@@ -33,11 +33,11 @@
 #define HASHPIN_SZ 32
 #define SALT_SZ 7
 
-#define CHUNK_TIME_SEC 1
 #define AUDIO_SAMPLING_RATE 48000
 #define BYTES_PER_SAMP 2
 #define NONCE_SIZE 12
 #define WAVE_HEADER_SZ 44
+#define METADATA_SZ 100
 #define META_DATA_ALLOC 4
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
@@ -97,6 +97,16 @@ typedef struct __attribute__((__packed__)) {
     char buf[];
 } drm_md;
 
+// Size should be 100 bytes
+typedef struct __attribute__ ((__packed__)) {
+    u8 md_size;
+    u8 owner_id;
+    u8 num_regions;
+    u8 num_users;
+    u8 provisioned_regions[MAX_REGIONS];
+    u8 provisioned_users[MAX_USERS];
+} purdue_md;
+
 
 // struct to interpret shared buffer as a drm song file
 // packing values skip over non-relevant WAV metadata
@@ -129,7 +139,7 @@ typedef struct __attribute__ ((__packed__)) {
 typedef struct __attribute__ ((__packed__)) {
 	unsigned char nonce[NONCE_SIZE];
 	unsigned char tag[MAC_SIZE];
-	unsigned char metadata[];
+	unsigned char metadata[METADATA_SZ];
 } encryptedMetadata;
 
 #define get_metadata(m) ((unsigned char *)(&m.metadata))
@@ -149,7 +159,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 
 // shared buffer values
-enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK };
+enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK, ENC_SHARE };
 enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
 
 
@@ -196,6 +206,7 @@ typedef struct {
     char username[USERNAME_SZ]; // logged on username
     char pin[MAX_PIN_SZ];       // logged on pin
     song_md song_md;            // current song metadata
+    purdue_md purdue_md;
     char drm_state;				// drm state
 } internal_state;
 
