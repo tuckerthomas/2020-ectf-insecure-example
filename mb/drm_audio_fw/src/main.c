@@ -3,8 +3,9 @@
  * Audio Digital Rights Management
  */
 
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "platform.h"
 #include "xparameters.h"
 #include "xil_exception.h"
@@ -16,7 +17,6 @@
 #include "xintc.h"
 #include "constants.h"
 #include "sleep.h"
-#include <string.h>
 
 #include <bearssl.h>
 
@@ -48,20 +48,7 @@ volatile cmd_channel *c = (cmd_channel*)SHARED_DDR_BASE;
 // internal state store
 internal_state s;
 
-// hold imported secrets.h JSON data about provisioned users and regions
-provisioned_user_struct provisioned_uid[64];
-provisioned_region_struct provisioned_rid[64];
-
-user_struct device_users[64];
-region_struct device_regions[64];
-
-int NUM_PROVISIONED_REGIONS = 0;
-int NUM_PROVISIONED_USERS = 0;
-int NUM_REGIONS = 0;
-int NUM_USERS = 0;
-
 //////////////////////// INTERRUPT HANDLING ////////////////////////
-
 
 // shared variable between main thread and interrupt processing thread
 volatile static int InterruptProcessed = FALSE;
@@ -767,17 +754,6 @@ int main() {
     unsigned char key[32];
 
     hextobin(key, KEY_HEX);
-
-    // import secrets.h JSON into struct
-    if(parse_user_data(user_data) == 0)
-    {
-        printf("Status returned failed");
-    }
-
-    if(parse_provisioned_user_data(provisioned_user_data) == 0)
-    {
-        printf("Status returned failed");
-    }
 
     // Handle commands forever
     while(1) {
