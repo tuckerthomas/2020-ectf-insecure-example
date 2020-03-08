@@ -7,7 +7,7 @@ Use: Once per song
 #import load from json to open json files for region and user secrets
 from json import load
 #Used for converting struct to basic types and converts it to bytes
-from struct import pack
+from struct import pack, pack_into
 #used in conjecttion with open for certain file locations
 from os import path
 #
@@ -202,7 +202,7 @@ class ProtectedSong(object):
 
         print("Encryption Success")
 
-def create_metadata(regions, user, user_secret_location, region_info):
+def create_metadata(regions, owner_name, user_secret_location, region_info):
     """Returns a byte string formatted as follows:
     METADATA_LENGTH(1B)/ownerID(1B)/REGION_LEN(1B)/USER_LEN(1B)/REGIONID1(1B)/REGIONID2 (1B)/.../opt. parity
     Args:
@@ -220,11 +220,32 @@ def create_metadata(regions, user, user_secret_location, region_info):
 
     # note: metadata must be an even length since each sample is 2B long
     # and ARM processors require memory accesses to be aligned to the type size
-    metadata = pack(
-        '=3B{regions_length}s{regions_len_2}s'.format(regions_length=len(regions), regions_len_2=len(regions) % 2),
-        int(user_secrets[user]['id']), len(regions), 0,
-        bytes([region_info[str(r)] for r in regions]),
-        b'\x00' if len(regions) % 2 else b'')
+    #metadata = pack(
+    #    '=3B{regions_length}s{regions_len_2}s'.format(regions_length=len(regions), regions_len_2=len(regions) % 2),
+    #    int(user_secrets[user]['id']), len(regions), 0,
+    #    bytes([region_info[str(r)] for r in regions]),
+    #    b'\x00' if len(regions) % 2 else b'')
+
+    rids = []
+    for provisioned_region in regions:
+        for region in region_info:
+            if provisioned_region == region['regionName']:
+                rids.append(int(region['regionID'], 16))
+
+    for user in user_secrets:
+        if user['userName'] == owner_name:
+            ownerID = int(user['userID'], 16)
+
+    metadata = bytearray(99)
+    pack_into("<III{}II".format(len(rids)), 
+        metadata, 
+        0,
+        # Start actual metadata 
+        ownerID,
+        len(regions),
+        0, # Should not be shared with any users yet
+        *rids,
+        0) # Should not be shared with any users yet
     return bytes([len(metadata) + 1]) + metadata
 
 
