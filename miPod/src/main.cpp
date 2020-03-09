@@ -316,16 +316,30 @@ void query_song(std::string song_name) {
 }
 
 void query_enc_song(std::string song_name) {
-	// Char pointers casted to remove volatile
+	FILE *fd;
 
-	// load the song into the shared buffer
-	if (!load_file(song_name, (songStruct *) &(c->song))) {
-		std::cerr << "Failed to load song!\r\n";
-		return;
+	std::cout << "Metadata size should be: " << sizeof(purdue_md) << std::endl;
+	std::cout << "Checking for metadata of size: " << METADATA_SZ << std::endl;
+	char encryptedMetadataBuffer[ENC_METADATA_SZ];
+
+	// Open the file in read(byte) mode
+	fd = fopen(song_name.c_str(), "rb");
+
+	if (fd == NULL) {
+		std::cerr << "Could not open " << song_name << " to share:" << (errno) << std::endl;
 	}
 
+	std::cout << "Current position: " << ftell(fd) << std::endl;
+	fseek(fd, sizeof(encryptedWaveheader), SEEK_SET);
+	std::cout << "Seeked position: " << ftell(fd) << std::endl;
+
+	// Read the encrypted metadata into the buffer
+	fread(encryptedMetadataBuffer, ENC_METADATA_SZ, 1, fd);
+
+	memcpy((encryptedMetadata *)&c->encMetadata, encryptedMetadataBuffer, ENC_METADATA_SZ);
+
 	// drive DRM
-	send_command(QUERY_SONG);
+	send_command(QUERY_ENC_SONG);
 	while (c->drm_state == STOPPED)
 		continue; // wait for DRM to start working
 	while (c->drm_state == WORKING)
@@ -550,6 +564,8 @@ void share_enc_song(std::string song_name, std::string& username) {
 		std::cerr << "Could not open " << song_name << " to share:" << (errno) << std::endl;
 	}
 
+	fseek(fd, ENC_WAVE_HEADER_SZ, SEEK_SET);
+
 	// Read the encrypted metadata into the buffer
 	fread(encryptedMetadataBuffer, ENC_METADATA_SZ, 1, fd);
 
@@ -746,6 +762,8 @@ int main(int argc, char** argv) {
 				logout();
 			} else if (cmd == "query") {
 				query_song(arg1);
+			} else if (cmd == "query_enc") {
+				query_enc_song(arg1);
 			} else if (cmd == "play") {
 				// break if exit was commanded in play loop
 				if (play_song(arg1) < 0) {

@@ -33,15 +33,13 @@
 #define HASHPIN_SZ 32
 #define SALT_SZ 7
 
-#define AUDIO_SAMPLING_RATE 48000
-#define BYTES_PER_SAMP 2
 #define NONCE_SIZE 12
 #define WAVE_HEADER_SZ 44
-#define METADATA_SZ 100
+#define METADATA_SZ 390
 #define META_DATA_ALLOC 4
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
-#define SONG_CHUNK_SZ 20480
+#define SONG_CHUNK_SZ 48000
 #define ENC_BUFFER_SZ 30
 #define ENC_CHUNK_SZ SONG_CHUNK_SZ + MAC_SIZE
 
@@ -99,12 +97,11 @@ typedef struct __attribute__((__packed__)) {
 
 // Size should be 100 bytes
 typedef struct __attribute__ ((__packed__)) {
-    u8 md_size;
-    u8 owner_id;
+    u32 owner_id;
     u8 num_regions;
     u8 num_users;
-    u8 provisioned_regions[MAX_REGIONS];
-    u8 provisioned_users[MAX_USERS];
+    u32 provisioned_regions[MAX_REGIONS];
+    u32 provisioned_users[MAX_USERS];
 } purdue_md;
 
 
@@ -157,9 +154,9 @@ typedef struct __attribute__ ((__packed__)) {
 #define get_drm_uids(d) (d.md.buf + d.md.num_regions)
 #define get_drm_song(d) ((char *)(&d.md) + d.md.md_size)
 
-
+// TODO: remove deprecated commands
 // shared buffer values
-enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK, ENC_SHARE };
+enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
 enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
 
 

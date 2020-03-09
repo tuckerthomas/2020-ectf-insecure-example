@@ -236,17 +236,18 @@ def create_metadata(regions, owner_name, user_secret_location, region_info):
         if user['userName'] == owner_name:
             ownerID = int(user['userID'], 16)
 
-    metadata = bytearray(99)
-    pack_into("<III{}II".format(len(rids)), 
+    metadata = bytearray(390)
+    pack_into(
+        "=IBB{}II".format(len(rids)), 
         metadata, 
         0,
-        # Start actual metadata 
+        # Start actual metadata
         ownerID,
         len(regions),
         0, # Should not be shared with any users yet
         *rids,
         0) # Should not be shared with any users yet
-    return bytes([len(metadata) + 1]) + metadata
+    return bytes(metadata)
 
 
 def main():
@@ -268,10 +269,7 @@ def main():
     args = parser.parse_args()
 
     regions = load(open(path.abspath(args.region_secrets_path)))
-    try:
-        metadata = create_metadata(args.region_list, args.owner, args.user_secrets_path, regions)
-    except ValueError:
-        raise ValueError('Ensure all user IDs are integers and all regions are in the provided region_information.json')
+    metadata = create_metadata(args.region_list, args.owner, args.user_secrets_path, regions)
     protected_song = ProtectedSong(args.infile, metadata)
     protected_song.encrypt_song("keys.json", args.outfile)
 

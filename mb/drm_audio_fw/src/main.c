@@ -510,6 +510,42 @@ void query_song() {
     mb_printf("Queried song (%d regions, %d users)\r\n", c->query.num_regions, c->query.num_users);
 }
 
+// handles a request to query song metadata
+void query_enc_song(unsigned char *key) {
+    char *name;
+
+    // Decrypt metadata and set to internal state
+    encryptedMetadata metadata;
+    if (read_metadata(key, &metadata) != 0) {
+    	mb_printf("Could not read metadata!\r\n");
+    	return;
+    }
+
+    // Copy data into new metadata
+    memset((void *)&c->query, 0, sizeof(query));
+
+    c->query.num_regions = s.purdue_md.num_regions;
+    c->query.num_users = s.purdue_md.num_users;
+
+    // copy owner name
+    uid_to_username(s.purdue_md.owner_id, &name, FALSE);
+    strcpy((char *)c->query.owner, name);
+
+    // copy region names
+    for (int i = 0; i < s.purdue_md.num_regions; i++) {
+        rid_to_region_name(s.purdue_md.provisioned_regions[i], &name, FALSE);
+        strcpy((char *)q_region_lookup(c->query, i), name);
+    }
+
+    // copy authorized uid names
+    for (int i = 0; i < s.purdue_md.num_users; i++) {
+        uid_to_username(s.purdue_md.provisioned_users[i], &name, FALSE);
+        strcpy((char *)q_user_lookup(c->query, i), name);
+    }
+
+    mb_printf("Queried song (%d regions, %d users)\r\n", c->query.num_regions, c->query.num_users);
+}
+
 
 // add a user to the song's list of users
 void share_song() {
@@ -855,6 +891,9 @@ int main() {
             case QUERY_SONG:
                 query_song();
                 break;
+            case QUERY_ENC_SONG:
+            	query_enc_song(key);
+            	break;
             case SHARE:
                 share_song();
                 break;
