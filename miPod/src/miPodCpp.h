@@ -45,23 +45,23 @@
 
 // structs to import secrets.h JSON data into memory
 typedef struct {
-    uint8_t uid;
+    uint32_t uid;
     char username[USERNAME_SZ];
     char hashedPin[HASHPIN_SZ];
     char salt[SALT_SZ];
 } user_struct;
 
 typedef struct {
-    uint8_t regionID;
+    uint32_t regionID;
     char regionName[REGION_NAME_SZ];
 } region_struct;
 
 typedef struct {
-    uint8_t provisioned_userID;
+    uint32_t provisioned_userID;
 } provisioned_user_struct;
 
 typedef struct {
-    uint8_t provisioned_regionID;
+    uint32_t provisioned_regionID;
 } provisioned_region_struct;
 
 #define ENC_BUFFER_SZ 120

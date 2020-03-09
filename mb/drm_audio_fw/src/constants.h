@@ -45,23 +45,23 @@
 
 // structs to import secrets.h JSON data into memory
 typedef struct {
-    u8 uid;
+    u32 uid;
     char username[USERNAME_SZ];
     char hashedPin[HASHPIN_SZ];
     char salt[SALT_SZ];
 } user_struct;
 
 typedef struct {
-    u8 regionID;
+    u32 regionID;
     char regionName[REGION_NAME_SZ];
 } region_struct;
 
 typedef struct {
-    u8 provisioned_userID;
+    u32 provisioned_userID;
 } provisioned_user_struct;
 
 typedef struct {
-    u8 provisioned_regionID;
+    u32 provisioned_regionID;
 } provisioned_region_struct;
 
 // LED colors and controller

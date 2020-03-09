@@ -72,7 +72,7 @@ int is_provisioned_rid(char rid) {
 }
 
 // looks up the region name corresponding to the rid
-int rid_to_region_name(char rid, char **region_name, int provisioned_only) {
+int rid_to_region_name(u32 rid, char **region_name, int provisioned_only) {
     for (int i = 0; i < NUM_REGIONS; i++) {
         if (rid == device_regions[i].regionID &&
             (!provisioned_only || is_provisioned_rid(rid))) {
@@ -115,7 +115,7 @@ int is_provisioned_uid(char uid) {
 
 
 // looks up the username corresponding to the uid
-int uid_to_username(char uid, char **username, int provisioned_only) {
+int uid_to_username(u32 uid, char **username, int provisioned_only) {
     for (int i = 0; i < NUM_USERS; i++) {
         if (uid == device_users[i].uid &&
             (!provisioned_only || is_provisioned_uid(uid))) {
@@ -291,7 +291,6 @@ int read_metadata(unsigned char *key, encryptedMetadata *metadata) {
 		mb_printf("Metadata validated\r\n");
 		// Copy metadata into local state
 		memcpy(&s.purdue_md, metadata_buffer, METADATA_SZ);
-		set_waiting_chunk();
 		return 0;
 	} else {
 		mb_printf("Modification detected!\r\n");
@@ -785,6 +784,7 @@ void play_encrypted_song(unsigned char *key) {
 					c->total_chunks = chunks_to_read;
 					c->chunk_size = SONG_CHUNK_SZ;
 					c->chunk_remainder = chunk_remainder;
+					set_waiting_chunk();
 					break;
 				} else {
 					return;

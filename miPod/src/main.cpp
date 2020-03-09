@@ -327,6 +327,7 @@ void query_enc_song(std::string song_name) {
 
 	if (fd == NULL) {
 		std::cerr << "Could not open " << song_name << " to share:" << (errno) << std::endl;
+		return;
 	}
 
 	std::cout << "Current position: " << ftell(fd) << std::endl;
@@ -340,12 +341,15 @@ void query_enc_song(std::string song_name) {
 
 	// drive DRM
 	send_command(QUERY_ENC_SONG);
-	while (c->drm_state == STOPPED)
-		continue; // wait for DRM to start working
-	while (c->drm_state == WORKING)
+	while (c->drm_state == STOPPED) {
+		continue;
+	}
+	while (c->drm_state == WORKING) {
 		continue; // wait for DRM to finish
+	}
 
 	// print query results
+	std::cout << "Owner: " << c->query.owner << std::endl;
 
 	std::string buffer((char *)q_region_lookup(c->query, 0));
 	std::cout << "Regions: " << buffer;
