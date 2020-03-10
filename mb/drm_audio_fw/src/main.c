@@ -18,6 +18,7 @@
 #include "constants.h"
 #include "sleep.h"
 
+// Bearssl Library
 #include <bearssl.h>
 
 //////////////////////// GLOBALS ////////////////////////
@@ -32,7 +33,7 @@ const struct color YELLOW = {0x01ff, 0x01ff, 0x0000};
 const struct color GREEN =  {0x0000, 0x01ff, 0x0000};
 const struct color BLUE =   {0x0000, 0x0000, 0x01ff};
 
-// change states
+// DRM States and Colors associated with them
 #define change_state(state, color) c->drm_state = state; s.drm_state = state; setLED(led, color);
 #define set_stopped() change_state(STOPPED, RED)
 #define set_working() change_state(WORKING, YELLOW)
@@ -217,6 +218,7 @@ int gen_song_md(char *buf) {
     return buf[0];
 }
 
+// Converts hex string to binary array
 static size_t hextobin(unsigned char *dst, const char *src) {
 	size_t num;
 	unsigned acc;
@@ -247,6 +249,7 @@ static size_t hextobin(unsigned char *dst, const char *src) {
 	return num;
 }
 
+// Hashes a given pin and stores it into the buffer
 void hash_pin(const char *pin, const char *salt, unsigned char *hashpinBuffer) {
 	char concatPin[MAX_PIN_SZ + SALT_SZ];
 	memset(concatPin, 0, sizeof(concatPin));
@@ -263,6 +266,7 @@ void hash_pin(const char *pin, const char *salt, unsigned char *hashpinBuffer) {
     br_sha256_out(&ctx, hashpinBuffer);
 }
 
+// Validates a given encrypted waveHeader
 unsigned int read_header(unsigned char *key, waveHeaderMetaStruct *waveHeaderMeta) {
 	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
 	unsigned char aad[12] = "wave_header";
@@ -290,6 +294,7 @@ unsigned int read_header(unsigned char *key, waveHeaderMetaStruct *waveHeaderMet
 	return 1;
 }
 
+// Validates a given metadata
 int read_metadata(unsigned char *key, encryptedMetadata *metadata) {
 	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
 	unsigned char aad[10] = "meta_data";
@@ -316,19 +321,19 @@ int read_metadata(unsigned char *key, encryptedMetadata *metadata) {
 	return 1;
 }
 
+// Read a chunk of specific size and number, decrypt and copy into the FIFO buffer
 int read_chunks(unsigned char *key, int chunk_size, int chunk_num, int buffer_loc, u32 *fifo_ptr) {
 	static unsigned char encrypt_chunk_buffer[SONG_CHUNK_SZ];
-	//mb_printf("Reading chunk %i, with chunk_size: %i \r\n", chunk_num, chunk_size);
 	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
-
 	int aad = chunk_num;
-
 	unsigned char tag_buffer[MAC_SIZE];
 
+	// Copy data to buffers
 	memcpy(nonce, (unsigned char *) &c->encSongBuffer[buffer_loc].nonce, NONCE_SIZE);
 	memcpy(encrypt_chunk_buffer, (unsigned char *) &c->encSongBuffer[buffer_loc].data, SONG_CHUNK_SZ);
 	memcpy(tag, (unsigned char *) &c->encSongBuffer[buffer_loc].tag, MAC_SIZE);
 
+	// Decrypt the chunk
 	br_poly1305_ctmul_run(key, nonce, encrypt_chunk_buffer, chunk_size, &aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 0);
 
 	if (memcmp(tag_buffer, tag, MAC_SIZE) == 0) {
@@ -378,6 +383,7 @@ int read_chunks(unsigned char *key, int chunk_size, int chunk_num, int buffer_lo
 	return 1;
 }
 
+// Toggle the offset for the chunk buffer
 int toggle_offset(int offset) {
 	if (!offset) {
 		offset = 1;
@@ -388,6 +394,8 @@ int toggle_offset(int offset) {
 	return offset;
 }
 
+
+// Calculate metadata hash, encrypt metadta and store into metadata buffer
 void encryptMetaData(unsigned char *key, char *metadata, encryptedMetadata *enc_metadata) {
 	char nonce[NONCE_SIZE];
 	char aad[] = "meta_data";
@@ -398,6 +406,7 @@ void encryptMetaData(unsigned char *key, char *metadata, encryptedMetadata *enc_
 
     br_sha256_init(&ctx);
 
+    // Calculate sha256 hash
     br_sha256_update(&ctx, metadata, METADATA_SZ);
     char sha_compute[br_sha256_SIZE];
     br_sha256_out(&ctx, sha_compute);
@@ -495,37 +504,6 @@ void query_player() {
     mb_printf("Queried player (%d regions, %d users)\r\n", c->query.num_regions, c->query.num_users);
 }
 
-
-// handles a request to query song metadata
-void query_song() {
-    char *name;
-
-    // load song
-    load_song_md();
-    memset((void *)&c->query, 0, sizeof(query));
-
-    c->query.num_regions = s.song_md.num_regions;
-    c->query.num_users = s.song_md.num_users;
-
-    // copy owner name
-    uid_to_username(s.song_md.owner_id, &name, FALSE);
-    strcpy((char *)c->query.owner, name);
-
-    // copy region names
-    for (int i = 0; i < s.song_md.num_regions; i++) {
-        rid_to_region_name(s.song_md.rids[i], &name, FALSE);
-        strcpy((char *)q_region_lookup(c->query, i), name);
-    }
-
-    // copy authorized uid names
-    for (int i = 0; i < s.song_md.num_users; i++) {
-        uid_to_username(s.song_md.uids[i], &name, FALSE);
-        strcpy((char *)q_user_lookup(c->query, i), name);
-    }
-
-    mb_printf("Queried song (%d regions, %d users)\r\n", c->query.num_regions, c->query.num_users);
-}
-
 // handles a request to query song metadata
 void query_enc_song(unsigned char *key) {
     char *name;
@@ -560,46 +538,6 @@ void query_enc_song(unsigned char *key) {
     }
 
     mb_printf("Queried song (%d regions, %d users)\r\n", c->query.num_regions, c->query.num_users);
-}
-
-
-// add a user to the song's list of users
-void share_song() {
-    int new_md_len, shift;
-    char new_md[256], uid;
-
-    // reject non-owner attempts to share
-    load_song_md();
-    if (!s.logged_in) {
-        mb_printf("No user is logged in. Cannot share song\r\n");
-        c->song.wav_size = 0;
-        return;
-    } else if (s.uid != s.song_md.owner_id) {
-        mb_printf("User '%s' is not song's owner. Cannot share song\r\n", s.username);
-        c->song.wav_size = 0;
-        return;
-    } else if (!username_to_uid((char *)c->username, &uid, TRUE)) {
-        mb_printf("Username not found\r\n");
-        c->song.wav_size = 0;
-        return;
-    }
-
-    // generate new song metadata
-    s.song_md.uids[s.song_md.num_users++] = uid;
-    new_md_len = gen_song_md(new_md);
-    shift = new_md_len - s.song_md.md_size;
-
-    // shift over song and add new metadata
-    if (shift) {
-        memmove((void *)get_drm_song(c->song) + shift, (void *)get_drm_song(c->song), c->song.wav_size);
-    }
-    memcpy((void *)&c->song.md, new_md, new_md_len);
-
-    // update file size
-    c->song.file_size += shift;
-    c->song.wav_size  += shift;
-
-    mb_printf("Shared song with '%s'\r\n", c->username);
 }
 
 // add a user to the song's list of users
@@ -660,92 +598,6 @@ void share_enc_song(unsigned char *key) {
 
     mb_printf("Shared song with '%s'\r\n", c->username);
 }
-
-
-// plays a song and looks for play-time commands
-void play_song() {
-    u32 counter = 0, rem, cp_num, cp_xfil_cnt, offset, dma_cnt, length, *fifo_fill;
-
-    mb_printf("Reading Audio File...");
-    load_song_md();
-
-    // get WAV length
-    length = c->song.wav_size;
-    mb_printf("Song length = %dB", length);
-
-    // truncate song if locked
-    if (length > PREVIEW_SZ && is_locked()) {
-        length = PREVIEW_SZ;
-        mb_printf("Song is locked.  Playing only %ds = %dB\r\n",
-                   PREVIEW_TIME_SEC, PREVIEW_SZ);
-    } else {
-        mb_printf("Song is unlocked. Playing full song\r\n");
-    }
-
-    rem = length;
-    fifo_fill = (u32 *)XPAR_FIFO_COUNT_AXI_GPIO_0_BASEADDR;
-
-    // write entire file to two-block codec fifo
-    // writes to one block while the other is being played
-    set_playing();
-    while(rem > 0) {
-        // check for interrupt to stop playback
-        while (InterruptProcessed) {
-            InterruptProcessed = FALSE;
-
-            switch (c->cmd) {
-            case PAUSE:
-                mb_printf("Pausing... \r\n");
-                set_paused();
-                while (!InterruptProcessed) continue; // wait for interrupt
-                break;
-            case PLAY:
-                mb_printf("Resuming... \r\n");
-                set_playing();
-                break;
-            case STOP:
-                mb_printf("Stopping playback...");
-                return;
-            case RESTART:
-                mb_printf("Restarting song... \r\n");
-                rem = length; // reset song counter
-                set_playing();
-            default:
-                break;
-            }
-        }
-
-        // calculate write size and offset
-        cp_num = (rem > CHUNK_SZ) ? CHUNK_SZ : rem;
-        offset = (counter++ % 2 == 0) ? 0 : CHUNK_SZ;
-
-        // do first mem cpy here into DMA BRAM
-        Xil_MemCpy((void *)(XPAR_MB_DMA_AXI_BRAM_CTRL_0_S_AXI_BASEADDR + offset),
-                   (void *)(get_drm_song(c->song) + length - rem),
-                   (u32)(cp_num));
-
-        cp_xfil_cnt = cp_num;
-
-        while (cp_xfil_cnt > 0) {
-
-            // polling while loop to wait for DMA to be ready
-            // DMA must run first for this to yield the proper state
-            // rem != length checks for first run
-            while (XAxiDma_Busy(&sAxiDma, XAXIDMA_DMA_TO_DEVICE)
-                   && rem != length && *fifo_fill < (FIFO_CAP - 32));
-
-            // do DMA
-            dma_cnt = (FIFO_CAP - *fifo_fill > cp_xfil_cnt)
-                      ? FIFO_CAP - *fifo_fill
-                      : cp_xfil_cnt;
-            fnAudioPlay(sAxiDma, offset, dma_cnt);
-            cp_xfil_cnt -= dma_cnt;
-        }
-
-        rem -= cp_num;
-    }
-}
-
 
 // removes DRM data from song for digital out
 void digital_out() {
@@ -914,22 +766,12 @@ int main() {
             case QUERY_PLAYER:
                 query_player();
                 break;
-            case QUERY_SONG:
-                query_song();
-                break;
             case QUERY_ENC_SONG:
             	query_enc_song(key);
             	break;
-            case SHARE:
-                share_song();
-                break;
             case ENC_SHARE:
             	share_enc_song(key);
             	break;
-            case PLAY:
-                play_song();
-                mb_printf("Done Playing Song\r\n");
-                break;
             case DIGITAL_OUT:
                 digital_out();
                 break;

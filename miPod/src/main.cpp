@@ -93,31 +93,6 @@ void print_playback_help() {
 	std::cout << "  help: display this message\r\n";
 }
 
-//done
-// loads a file into the song buffer with the associate
-// returns the size of the file or 0 on error
-size_t load_file(std::string fname, songStruct *song_buf) {
-    int fd;
-    struct stat sb;
-
-    fd = open(fname.c_str(), O_RDONLY);
-    if (fd == -1){
-        std::cout << "Failed to open file! Error = " << (errno) << std::endl;
-        return 0;
-    }
-
-    if (fstat(fd, &sb) == -1){
-        std::cout << "Failed to stat file! Error = " << (errno) << std::endl;
-        return 0;
-    }
-
-    read(fd, song_buf, sb.st_size);
-    close(fd);
-
-    //mp_printf("Loaded file into shared buffer (%dB)\r\n", sb.st_size);
-    return sb.st_size;
-}
-
 FILE *read_enc_file_header(std::string fname) {
 	FILE* fd;
 
@@ -272,49 +247,6 @@ void query_player() {
     std::cout << std::endl;
 }
 
-//done
-// queries the DRM about a song
-void query_song(std::string song_name) {
-	// Char pointers casted to remove volatile
-
-	// load the song into the shared buffer
-	if (!load_file(song_name, (songStruct *) &(c->song))) {
-		std::cerr << "Failed to load song!\r\n";
-		return;
-	}
-
-	// drive DRM
-	send_command(QUERY_SONG);
-	while (c->drm_state == STOPPED)
-		continue; // wait for DRM to start working
-	while (c->drm_state == WORKING)
-		continue; // wait for DRM to finish
-
-	// print query results
-
-	std::string buffer((char *)q_region_lookup(c->query, 0));
-	std::cout << "Regions: " << buffer;
-	for (int i = 1; i < c->query.num_regions; i++) {
-		buffer = std::string((char *)q_region_lookup(c->query, i));
-		std::cout << ", " << buffer;
-	}
-	std::cout << std::endl;
-
-	buffer = std::string((char *)c->query.owner);
-	std::cout << "Owner: " << buffer << std::endl;
-
-	std::cout << "Authorized users: ";
-	if (c->query.num_users) {
-		buffer = std::string((char *)q_user_lookup(c->query, 0));
-		std::cout << buffer;
-		for (int i = 1; i < c->query.num_users; i++) {
-			buffer = std::string((char *)q_user_lookup(c->query, i));
-			std::cout << ", " << buffer;
-		}
-	}
-	std::cout << std::endl;
-}
-
 void query_enc_song(std::string song_name) {
 	FILE *fd;
 
@@ -374,142 +306,6 @@ void query_enc_song(std::string song_name) {
 	std::cout << std::endl;
 }
 
-// attempts to share a song with a user
-void share_song(std::string song_name, std::string& username) {
-	int fd;
-	unsigned int length;
-	ssize_t wrote, written = 0;
-
-	if (username.empty()) {
-		std::cout << "Need song name and username\r\n";
-		print_help();
-	}
-
-	// load the song into the shared buffer
-	if (!load_file(song_name, (songStruct *) &(c->song))) {
-		std::cerr << "Failed to load song!\r\n";
-		return;
-	}
-
-	username.copy((char *) c->username, USERNAME_SZ, 0);
-
-	// drive DRM
-	send_command(SHARE);
-	while (c->drm_state == STOPPED) continue; // wait for DRM to start working
-	while (c->drm_state == WORKING) continue; // wait for DRM to start working
-
-	// request was rejected if WAV length is 0
-	length = c->song.wav_size;
-	if (length == 0) {
-		std::cerr << "Share rejected\r\n";
-		return;
-	}
-
-	// open output file
-	fd = open(song_name.c_str(), O_WRONLY); //TODO: change to fstream
-	if (fd == -1) {
-		std::cerr << "Failed to open file! Error = " << (errno) << "\r\n";
-		return;
-	}
-
-	// write song dump to file
-	std::cout << "Writing song to file " << song_name << " " << length
-			<< "\r\n";
-	while (written < length) {
-		wrote = write(fd, (char *) &c->song + written, length - written);
-		if (wrote == -1) {
-			std::cerr << "Error in writing file! Error = " << (errno) << "\r\n";
-			return;
-		}
-		written += wrote;
-	}
-	close(fd);
-	std::cout << "Finished writing file\r\n";
-}
-
-// plays a song and enters the playback command loop
-int play_song(std::string song_name) {
-
-	std::cout << "Playing Song" << std::endl;
-
-	//char usr_cmd[USR_CMD_SZ + 1], *cmd = NULL, *arg1 = NULL, *arg2 = NULL;
-	std::string usr_cmd = "";
-	std::string cmd;
-	std::string arg1 = "";
-	std::string arg2 = "";
-
-	// load song into shared buffer
-	if (!load_file(song_name, (songStruct*) &(c->song))) {
-		std::cerr << "Failed to load song!\r\n";
-		return 0;
-	}
-
-	// drive the DRM
-	send_command(PLAY);
-	while (c->drm_state == STOPPED)
-		continue; // wait for DRM to start playing
-
-	// play loop
-	while (1) {
-		// get a valid command
-		do {
-			print_prompt_msg(song_name.c_str());
-			//fgets(usr_cmd, USR_CMD_SZ, stdin);
-			std::getline(std::cin, usr_cmd);
-
-			// exit playback loop if DRM has finished song
-			if (c->drm_state == STOPPED) {
-				std::cout << "Song finished\r\n";
-				return 0;
-			}
-		} while (usr_cmd.length() < 2); //chars are one byte so this is fine
-
-		std::cout << "Checking command: " << cmd << std::endl;
-
-		// parse and handle command
-		parse_input(usr_cmd, cmd, arg1, arg2);
-
-		if (!cmd.empty()) {
-			if (cmd == "help") {
-				print_playback_help();
-			} else if (cmd == "resume") {
-				send_command(PLAY);
-				usleep(200000); // wait for DRM to print
-			} else if (cmd == "pause") {
-				send_command(PAUSE);
-				usleep(200000); // wait for DRM to print
-			} else if (cmd == "stop") {
-				send_command(STOP);
-				usleep(200000); // wait for DRM to print
-				break;
-			} else if (cmd == "restart") {
-				send_command(RESTART);
-			} else if (cmd == "exit") {
-				std::cout << "Exiting...\r\n";
-				send_command(STOP);
-				return -1;
-			} else if (cmd == "rw") {
-				mp_printf("Unsupported feature.\r\n\r\n");
-				print_playback_help();
-			} else if (cmd == "ff") {
-				std::cout << "Unsupported feature.\r\n\r\n";
-				print_playback_help();
-			} else if (cmd == "lyrics") {
-				std::cout << "Unsupported feature.\r\n\r\n";
-				print_playback_help();
-			} else {
-				std::cout << "Unrecognized command." << std::endl;
-				print_playback_help();
-			}
-		} else {
-			std::cout << "Please enter a command." << std::endl;
-			print_playback_help();
-		}
-	}
-
-	return 0;
-}
-
 // turns DRM song into original WAV for digital output
 void digital_out(std::string song_name) {
 
@@ -517,10 +313,10 @@ void digital_out(std::string song_name) {
 	//not sure about converting this code to C++
 
 	// load file into shared buffer
-	if (!load_file(song_name, (songStruct *) &(c->song))) {
+	/*if (!load_file(song_name, (songStruct *) &(c->song))) {
 		std::cout << "Failed to load song!\r\n";
 		return;
-	}
+	}*/
 
 	// drive DRM
 	send_command(DIGITAL_OUT);
@@ -804,19 +600,10 @@ int main(int argc, char** argv) {
 				login(arg1, arg2);
 			} else if (cmd == "logout") {
 				logout();
-			} else if (cmd == "query") {
-				query_song(arg1);
 			} else if (cmd == "query_enc") {
 				query_enc_song(arg1);
-			} else if (cmd == "play") {
-				// break if exit was commanded in play loop
-				if (play_song(arg1) < 0) {
-					break;
-				}
 			} else if (cmd == "digital_out") {
 				digital_out(arg1);
-			} else if (cmd == "share") {
-				share_song(arg1, arg2);
 			} else if (cmd == "share_enc") {
 				share_enc_song(arg1, arg2);
 			} else if (cmd == "play_enc_song") {
