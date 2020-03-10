@@ -104,7 +104,7 @@ int region_name_to_rid(char *region_name, char *rid, int provisioned_only) {
 
 
 // returns whether a uid has been provisioned
-int is_provisioned_uid(char uid) {
+int is_provisioned_uid(u32 uid) {
     for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {
         if (uid == provisioned_uid[i].provisioned_userID) {
             return TRUE;
@@ -131,9 +131,9 @@ int uid_to_username(u32 uid, char **username, int provisioned_only) {
 
 
 // looks up the uid corresponding to the username
-int username_to_uid(char *username, u8 *uid, int provisioned_only) {
+int username_to_uid(char *username, u32 *uid, int provisioned_only) {
     for (int i = 0; i < NUM_USERS; i++) {
-        if (!strcmp(username, device_users[i].username) &&
+        if (!strncmp(username, device_users[i].username, strlen(device_users[i].username)) &&
             (!provisioned_only || is_provisioned_uid(device_users[i].uid))) {
             *uid = device_users[i].uid;
             return TRUE;
@@ -249,9 +249,10 @@ static size_t hextobin(unsigned char *dst, const char *src) {
 
 void hash_pin(const char *pin, const char *salt, unsigned char *hashpinBuffer) {
 	char concatPin[MAX_PIN_SZ + SALT_SZ];
+	memset(concatPin, 0, sizeof(concatPin));
 
-	strncpy(concatPin, pin, MAX_PIN_SZ);
-	strncat(concatPin, salt, SALT_SZ);
+	strncpy(concatPin, pin, strlen(pin));
+	strncat(concatPin, salt, strlen(salt));
 
     br_sha256_context ctx;
 
@@ -393,17 +394,13 @@ void encryptMetaData(unsigned char *key, char *metadata, encryptedMetadata *enc_
 	char tag_buffer[MAC_SIZE];
     
 	// Start nonce calculation
-    br_sha256_context *ctx;
+    br_sha256_context ctx;
 
-    br_sha256_init(ctx); // TODO: Check
+    br_sha256_init(&ctx);
 
-    if (ctx == NULL) {
-    	mb_printf("SHA256 Init failed\r\n");
-    }
-
-    br_sha256_update(ctx, metadata, METADATA_SZ);
+    br_sha256_update(&ctx, metadata, METADATA_SZ);
     char sha_compute[br_sha256_SIZE];
-    br_sha256_out(ctx, sha_compute);
+    br_sha256_out(&ctx, sha_compute);
 
     // Pull the first 16 bytes for the nonce
     memcpy(nonce, sha_compute, NONCE_SIZE);
@@ -607,7 +604,7 @@ void share_song() {
 
 // add a user to the song's list of users
 void share_enc_song(unsigned char *key) {
-    u8 uid;
+    u32 uid;
 
     encryptedMetadata metadata;
     if (read_metadata(key, &metadata) != 0) {
@@ -631,15 +628,19 @@ void share_enc_song(unsigned char *key) {
         c->song.wav_size = 0;
         return;
     }
-
+    // Initialize empty struct
     // Create spot for new metadata
-    purdue_md newMetaData;
+    static const purdue_md emptyMd;
+    purdue_md newMetaData = emptyMd;
 
     // Copy data into new metadata
     newMetaData.owner_id = s.purdue_md.owner_id;
     newMetaData.num_regions = s.purdue_md.num_regions;
     newMetaData.num_users = s.purdue_md.num_users;
 
+    for (int i = 0; i < s.purdue_md.num_regions; i++) {
+    	newMetaData.provisioned_regions[i] = s.purdue_md.provisioned_regions[i];
+    }
     // TODO: Check to set if there's already a max amount of users
     // Increase shared users
     for (int i = 0; i < s.purdue_md.num_users; i++) {
@@ -647,10 +648,12 @@ void share_enc_song(unsigned char *key) {
     }
 
     // Add the new userid
-    newMetaData.provisioned_regions[newMetaData.num_users++] = uid;
+    newMetaData.provisioned_users[newMetaData.num_users++] = uid;
 
     // Prepare the new metadata to be encrypted
     char metadata_buffer[METADATA_SZ];
+
+    memcpy(metadata_buffer, (const unsigned char*)&newMetaData, sizeof(newMetaData));
 
     // Encrypt the new metadata and copy it into the command buffer
     encryptMetaData(key, metadata_buffer, (encryptedMetadata *)&c->encMetadata);

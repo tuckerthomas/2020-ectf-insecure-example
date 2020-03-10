@@ -558,6 +558,12 @@ void share_enc_song(std::string song_name, std::string& username) {
 	FILE *fd;
 	unsigned int length;
 
+	if (username.empty()) {
+		std::cout << "Need song name and username\r\n";
+		print_help();
+		return;
+	}
+
 	// Create a buffer for the read metadata
 	char encryptedMetadataBuffer[ENC_METADATA_SZ];
 
@@ -569,10 +575,16 @@ void share_enc_song(std::string song_name, std::string& username) {
 		return;
 	}
 
-	fseek(fd, ENC_WAVE_HEADER_SZ, SEEK_SET);
+	std::cout << "Starting at " << ftell(fd) << std::endl;
+	fseek(fd, ENC_WAVE_HEADER_SZ + META_DATA_ALLOC, SEEK_SET);
+	std::cout << "Seeked to " << ftell(fd) << std::endl;
 
 	// Read the encrypted metadata into the buffer
 	fread(encryptedMetadataBuffer, ENC_METADATA_SZ, 1, fd);
+
+	//fclose(fd);
+
+	//fd = NULL;
 
 	// Copy the local buffer to the command buffer
 	memcpy((encryptedMetadata *)&c->encMetadata, encryptedMetadataBuffer, ENC_METADATA_SZ);
@@ -598,20 +610,47 @@ void share_enc_song(std::string song_name, std::string& username) {
 		return;
 	}
 
+	//song_name.c_str()
+
+	fseek(fd, 0, SEEK_END);
+	int endFileSZ = ftell(fd);
+	fseek(fd, 0, SEEK_SET);
+
+	FILE* fd2;
 	// open output file
-	fd = fopen(song_name.c_str(), "wb");
-	if (fd == NULL) {
+	fd2 = fopen(song_name.append(".temp").c_str(), "wb");
+
+	if (fd2 == NULL) {
 		std::cerr << "Failed to open file! Error = " << (errno) << "\r\n";
 		return;
 	}
 
-	// Seek past the wave file header
-	fseek(fd, ENC_WAVE_HEADER_SZ, SEEK_SET);
+	// Max size it will be, ENC_METADATA_SZ
+	char buffer[ENC_METADATA_SZ];
+
+	// Read WAVE_HEADER
+	fread(buffer, ENC_WAVE_HEADER_SZ + META_DATA_ALLOC, 1, fd);
+
+	// Write WAVE_HEADER
+	fwrite(buffer, ENC_WAVE_HEADER_SZ + META_DATA_ALLOC, 1, fd2);
+
+	fseek(fd, ENC_METADATA_SZ, SEEK_CUR);
 
 	// Write new metadata
-	fwrite((encryptedMetadata *)&c->encMetadata, ENC_METADATA_SZ, 1, fd);
+	fwrite((encryptedMetadata *)&c->encMetadata, ENC_METADATA_SZ, 1, fd2);
+
+	static unsigned char song_buffer[MAX_SONG_SZ];
+
+	int byte_to_read = endFileSZ - (ENC_WAVE_HEADER_SZ + META_DATA_ALLOC + ENC_METADATA_SZ);
+	std::cout << "Size of song_buffer: " << sizeof(song_buffer) << std::endl;
+	std::cout << "file size: " << endFileSZ << std::endl;
+	std::cout << "Bytes to read: " << byte_to_read << std::endl;
+ 	fread(song_buffer, byte_to_read, 1, fd);
+	fwrite(song_buffer, byte_to_read, 1, fd2);
 
 	fclose(fd);
+	fclose(fd2);
+
 	std::cout << "Finished writing file\r\n";
 }
 
