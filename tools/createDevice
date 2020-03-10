@@ -5,7 +5,7 @@ Use: Once per device
 """
 
 from os import mkdir, path              # For file creation and manipulation
-from json import dump, load, dumps      # For working with JSON data
+from json import load, dumps            # For working with JSON data
 from argparse import ArgumentParser     # Parse through arguments passed through the terminal
 from secrets import token_hex           # Alows for generating random hex characters
 
@@ -24,37 +24,98 @@ Description decrypts song
         Writes data to device secrets file
 """
 def main(valid_regions, valid_users, user_secrets, region_secrets, device_dir):
-    # Build dictionary of all users and regions
-    allData = {"users": user_secrets, "regions": region_secrets}
+    
+    # TotalUsers counter
+    totalUsers = 0
 
-    # Encode dictionary of all users and regions in JSON
-    allDataJson = dumps(allData)
+    # TotalRegions counter
+    totalRegions = 0
 
-    # Add escape characters to all users and regions JSON
-    escapedAllDataJson = allDataJson.replace("\"", "\\\"")
+    # ValidUsers counter
+    validUsers = 0
 
-    # Remove invalid users from dictionary of all users and regions
-    for user in allData['users']:
-        if user['userName'] not in valid_users:
-            allData['users'].remove(user)
+    # ValidRegions counter
+    validRegions = 0
 
-    # Remove invalid regions from dictionary of all users and regions
-    for region in allData['regions']:
-        if region['regionName'] not in valid_regions:
-            allData['regions'].remove(region)
+    # String Array of all users 
+    allUsersArray = "{"
 
-    # Encode dictionary of valud users and regions in JSON
-    validDataJson = dumps(allData)
+    # String Array of all regions
+    allRegionsArray = "{"
 
-    # Add escape characters to valid users and regions JSON
-    escapedValidDataJson = validDataJson.replace("\"", "\\\"")
+    # String Array of all Valid users
+    validUsersArray = "{"
+
+    # String Array of all valid regions
+    validRegionsArray = "{"
+
+    # Remove invalid users from dictionary of all users and regions and tabulate total and valid users
+    for user in user_secrets:
+
+        # Adds userId to allUsersArray  Example: "{1234, ""
+        allUsersArray += "{" + user["userID"] + ", "
+
+        # Adds userName to allUsersArray  Example: '"user1", '
+        allUsersArray += "\"" + user["userName"] + "\", "
+
+        # Adds hashedPin to allUsersArray  Example: '"dfihfuhdsfuishfdsjfpok", ' 
+        allUsersArray += "\"" + user["hashedPin"] + "\", "
+
+        # Adds salt to allUsersArray  Example: '"abcdef"}, '
+        allUsersArray += "\"" + user["salt"] + "\"}, "
+
+        # Increments total users by one
+        totalUsers += 1
+
+        # Checks if the user name is in the valid_users array
+        if user['userName'] in valid_users:
+
+            # Increments valid users by one
+            validUsers = validUsers + 1
+
+            # Adds the userID to the validUsersArray  Example: '{0x12345}, '
+            validUsersArray = validUsersArray + "{" + user["userID"] + "}, "
+
+    # Removes a comma and a space from the last two positions in the allUsersArray and adds a '}'
+    allUsersArray = allUsersArray[0:len(allUsersArray) - 2] + "}"
+
+    # Removes a comma and a space from the last two postions in the validUsersArray and adds a '}'
+    validUsersArray = validUsersArray[0:len(validUsersArray) - 2] + "}"
+    
+    # Adds regions to the allRegionsArray
+    for region in region_secrets:
+
+        # Adds regionID to allRegionsArray  Example: '{0x123456, '
+        allRegionsArray += "{" + region["regionID"] + ", "
+
+        # Adds regionName to allRegionsArray  Example: 'Japan"},'
+        allRegionsArray += "\"" + str(region["regionName"]) + "\"}, "
+
+        # Increments totalRegions by 1
+        totalRegions = totalRegions + 1
+
+        # Checks if the region name is in the valid_regions array
+        if region['regionName'] in valid_regions:
+
+            # Increments validRegions by one
+            validRegions = validRegions + 1
+
+            # Adds the RegionID to the validRegionsArray  Example: '{0x12345}, '
+            validRegionsArray = validRegionsArray + "{" + region["regionID"] + "}, "
+
+    # Removes a comma and a space from the last two positions in the allUsersArray and adds a '}'
+    allRegionsArray = allRegionsArray[0:len(allRegionsArray) - 2] + "}" 
+
+    # Removes a comma and a space from the last two positions in the allUsersArray and adds a '}'
+    validRegionsArray = validRegionsArray[0:len(validRegionsArray) - 2] + "}" 
 
     # Create device specific key
     device_key = token_hex(32)
 
-    # Make device directory
+    # Check if Device Directory Exists
     if not path.isdir(device_dir[0]):
-        print("real boobs")
+
+        # Make device driectory
         mkdir(device_dir[0])
 
     # Make output file path
@@ -62,21 +123,26 @@ def main(valid_regions, valid_users, user_secrets, region_secrets, device_dir):
 
     # Open device_secrets file and write data to it
     with open(outfile, mode="w") as header:
-        header.write("""
-#ifndef SECRETS_H
+        header.write("""#ifndef SECRETS_H
 #define SECRETS_H
 
 // Device Specific Key
 const char *KEY_HEX = "{device_key}";
 
-// JSON Payload of All Users and Regions
-const char *USER_DATA = "{escapedAllDataJson}";
+const int NUM_REGIONS = {totalRegions};
+const int NUM_USERS = {totalUsers};
+const int NUM_PROVISIONED_REGIONS = {validRegions};
+const int NUM_PROVISIONED_USERS = {validUsers};
 
-// JSON Payload of Valid Users and Regions
-const char *PROVISIONED_USER_DATA = "{escapedValidDataJson}";
+const region_struct device_regions[] = {allRegionsArray};
+const user_struct device_users[] = {allUsersArray};
+const provisioned_region_struct provisioned_rid[] = {validRegionsArray};
+const provisioned_user_struct provisioned_uid[] = {validUsersArray};
 
 #endif // SECRETS_H
-""".format(device_key=device_key, escapedAllDataJson=escapedAllDataJson, escapedValidDataJson=escapedValidDataJson))
+""".format(device_key=device_key, totalRegions=totalRegions, totalUsers=totalUsers, 
+validRegions=validRegions, validUsers=validUsers, allRegionsArray=allRegionsArray, 
+allUsersArray=allUsersArray, validRegionsArray=validRegionsArray, validUsersArray=validUsersArray))
 
 
 
@@ -115,7 +181,7 @@ def get_args():
     # Call to parse arguments
     args = parser.parse_args()
 
-
+    # Returns arguments from the command line
     return args.region_list, args.region_secrets_path, args.user_list, args.user_secrets_path, args.device_dir
       
 
@@ -148,5 +214,6 @@ if __name__ == '__main__':
 
     # Parse the contents of region_secrets as JSON data and store
     region_secrets = load(open(path.abspath(str(region_secrets[0]))))
-
+    
+    # Start Main function
     main(valid_regions, valid_users, user_secrets, region_secrets, device_dir)
