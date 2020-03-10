@@ -443,6 +443,7 @@ void login() {
                     //update states
                     s.logged_in = 1;
                     c->login_status = 1;
+                    // TODO: Change
                     memcpy(s.username, (void*)c->username, USERNAME_SZ);
                     memcpy(s.pin, (void*)c->pin, MAX_PIN_SZ);
                     s.uid = provisioned_uid[i].provisioned_userID;
