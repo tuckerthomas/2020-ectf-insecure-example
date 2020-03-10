@@ -236,14 +236,12 @@ void login(std::string& username, std::string& pin) {
 	send_command(LOGIN);
 }
 
-//done
 // logs out for a user
 void logout() {
 	// drive DRM
 	send_command(LOGOUT);
 }
 
-//done
 // queries the DRM about the player
 // DRM will fill shared buffer with query content
 void query_player() {
@@ -317,7 +315,65 @@ void query_song(std::string song_name) {
 	std::cout << std::endl;
 }
 
-//done
+void query_enc_song(std::string song_name) {
+	FILE *fd;
+
+	std::cout << "Metadata size should be: " << sizeof(purdue_md) << std::endl;
+	std::cout << "Checking for metadata of size: " << METADATA_SZ << std::endl;
+	char encryptedMetadataBuffer[ENC_METADATA_SZ];
+
+	// Open the file in read(byte) mode
+	fd = fopen(song_name.c_str(), "rb");
+
+	if (fd == NULL) {
+		std::cerr << "Could not open " << song_name << " to share:" << (errno) << std::endl;
+		return;
+	}
+
+	std::cout << "Current position: " << ftell(fd) << std::endl;
+	fseek(fd, sizeof(encryptedWaveheader), SEEK_SET);
+	std::cout << "Seeked position: " << ftell(fd) << std::endl;
+
+	// Read the encrypted metadata into the buffer
+	fread(encryptedMetadataBuffer, ENC_METADATA_SZ, 1, fd);
+
+	memcpy((encryptedMetadata *)&c->encMetadata, encryptedMetadataBuffer, ENC_METADATA_SZ);
+
+	// drive DRM
+	send_command(QUERY_ENC_SONG);
+	while (c->drm_state == STOPPED) {
+		continue;
+	}
+	while (c->drm_state == WORKING) {
+		continue; // wait for DRM to finish
+	}
+
+	// print query results
+	std::cout << "Owner: " << c->query.owner << std::endl;
+
+	std::string buffer((char *)q_region_lookup(c->query, 0));
+	std::cout << "Regions: " << buffer;
+	for (int i = 1; i < c->query.num_regions; i++) {
+		buffer = std::string((char *)q_region_lookup(c->query, i));
+		std::cout << ", " << buffer;
+	}
+	std::cout << std::endl;
+
+	buffer = std::string((char *)c->query.owner);
+	std::cout << "Owner: " << buffer << std::endl;
+
+	std::cout << "Authorized users: ";
+	if (c->query.num_users) {
+		buffer = std::string((char *)q_user_lookup(c->query, 0));
+		std::cout << buffer;
+		for (int i = 1; i < c->query.num_users; i++) {
+			buffer = std::string((char *)q_user_lookup(c->query, i));
+			std::cout << ", " << buffer;
+		}
+	}
+	std::cout << std::endl;
+}
+
 // attempts to share a song with a user
 void share_song(std::string song_name, std::string& username) {
 	int fd;
@@ -497,6 +553,68 @@ void digital_out(std::string song_name) {
 	std::cout << "Finished writing file" << std::endl;
 }
 
+// attempts to share a song with a user
+void share_enc_song(std::string song_name, std::string& username) {
+	FILE *fd;
+	unsigned int length;
+
+	// Create a buffer for the read metadata
+	char encryptedMetadataBuffer[ENC_METADATA_SZ];
+
+	// Open the file in read(byte) mode
+	fd = fopen(song_name.c_str(), "rb");
+
+	if (fd == NULL) {
+		std::cerr << "Could not open " << song_name << " to share:" << (errno) << std::endl;
+		return;
+	}
+
+	fseek(fd, ENC_WAVE_HEADER_SZ, SEEK_SET);
+
+	// Read the encrypted metadata into the buffer
+	fread(encryptedMetadataBuffer, ENC_METADATA_SZ, 1, fd);
+
+	// Copy the local buffer to the command buffer
+	memcpy((encryptedMetadata *)&c->encMetadata, encryptedMetadataBuffer, ENC_METADATA_SZ);
+
+	// Check username argument
+	if (username.empty()) {
+		std::cout << "Need song name and username\r\n";
+		print_help();
+	}
+
+	username.copy((char *) c->username, USERNAME_SZ, 0);
+
+	// drive DRM
+	send_command(ENC_SHARE);
+	while (c->drm_state == STOPPED) continue; // wait for DRM to start working
+	while (c->drm_state == WORKING) continue; // wait for DRM to start working
+
+	// TODO: Change how failed encrypted metadata is checked
+	// request was rejected if WAV length is 0
+	length = c->song.wav_size;
+	if (length == 0) {
+		std::cerr << "Share rejected\r\n";
+		return;
+	}
+
+	// open output file
+	fd = fopen(song_name.c_str(), "wb");
+	if (fd == NULL) {
+		std::cerr << "Failed to open file! Error = " << (errno) << "\r\n";
+		return;
+	}
+
+	// Seek past the wave file header
+	fseek(fd, ENC_WAVE_HEADER_SZ, SEEK_SET);
+
+	// Write new metadata
+	fwrite((encryptedMetadata *)&c->encMetadata, ENC_METADATA_SZ, 1, fd);
+
+	fclose(fd);
+	std::cout << "Finished writing file\r\n";
+}
+
 void play_encrypted_song(std::string song_name) {
 
 	std::cout << "Playing Encrypted Song" << std::endl;
@@ -649,6 +767,8 @@ int main(int argc, char** argv) {
 				logout();
 			} else if (cmd == "query") {
 				query_song(arg1);
+			} else if (cmd == "query_enc") {
+				query_enc_song(arg1);
 			} else if (cmd == "play") {
 				// break if exit was commanded in play loop
 				if (play_song(arg1) < 0) {
@@ -658,6 +778,8 @@ int main(int argc, char** argv) {
 				digital_out(arg1);
 			} else if (cmd == "share") {
 				share_song(arg1, arg2);
+			} else if (cmd == "share_enc") {
+				share_enc_song(arg1, arg2);
 			} else if (cmd == "play_enc_song") {
 				play_encrypted_song(arg1);
 			} else if (cmd == "exit") {

@@ -105,6 +105,9 @@ def decrypt_song(keys_loc, infile, outfile):
     encrypted_metadata_combined = encrypted_metadata + encrypted_metadata_tag
 
     print("Encrypted data: " + str(encrypted_metadata_combined))
+    metadata = b.crypto_aead_chacha20poly1305_ietf_decrypt(encrypted_metadata_combined, aad, nonce, key)
+
+    print("Decrypted metadta: " + str(metadata))
 
 
     #reads individual chunks

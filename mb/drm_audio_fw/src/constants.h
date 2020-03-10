@@ -23,24 +23,46 @@
 #define mb_printf(...) xil_printf(MB_PROMPT __VA_ARGS__)
 
 // protocol constants
-#define MAX_REGIONS 64
-#define REGION_NAME_SZ 64
+#define MAX_REGIONS 32
+#define REGION_NAME_SZ 16
 #define MAX_USERS 64
-#define USERNAME_SZ 64
-#define MAX_PIN_SZ 64
+#define USERNAME_SZ 16
+#define MAX_PIN_SZ 8
 #define MAX_SONG_SZ (1<<25)
 
-#define CHUNK_TIME_SEC 1
-#define AUDIO_SAMPLING_RATE 48000
-#define BYTES_PER_SAMP 2
+#define HASHPIN_SZ 65
+#define SALT_SZ 7
+
 #define NONCE_SIZE 12
 #define WAVE_HEADER_SZ 44
+#define METADATA_SZ 390
 #define META_DATA_ALLOC 4
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
 #define SONG_CHUNK_SZ 48000
+#define ENC_BUFFER_SZ 30
 #define ENC_CHUNK_SZ SONG_CHUNK_SZ + MAC_SIZE
-#define ENC_BUFFER_SZ 120
+
+// structs to import secrets.h JSON data into memory
+typedef struct {
+    u32 uid;
+    char username[USERNAME_SZ];
+    char hashedPin[HASHPIN_SZ];
+    char salt[SALT_SZ];
+} user_struct;
+
+typedef struct {
+    u32 regionID;
+    char regionName[REGION_NAME_SZ];
+} region_struct;
+
+typedef struct {
+    u32 provisioned_userID;
+} provisioned_user_struct;
+
+typedef struct {
+    u32 provisioned_regionID;
+} provisioned_region_struct;
 
 // LED colors and controller
 struct color {
@@ -72,6 +94,15 @@ typedef struct __attribute__((__packed__)) {
     char num_users;
     char buf[];
 } drm_md;
+
+// Size should be 100 bytes
+typedef struct __attribute__ ((__packed__)) {
+    u32 owner_id;
+    u8 num_regions;
+    u8 num_users;
+    u32 provisioned_regions[MAX_REGIONS];
+    u32 provisioned_users[MAX_USERS];
+} purdue_md;
 
 
 // struct to interpret shared buffer as a drm song file
@@ -105,10 +136,10 @@ typedef struct __attribute__ ((__packed__)) {
 typedef struct __attribute__ ((__packed__)) {
 	unsigned char nonce[NONCE_SIZE];
 	unsigned char tag[MAC_SIZE];
-	unsigned char metadata[];
+	unsigned char metadata[METADATA_SZ];
 } encryptedMetadata;
 
-#define get_metadata(m) ((unsigned char *)&m + NONCE_SIZE + MAC_SIZE)
+#define get_metadata(m) ((unsigned char *)(&m.metadata))
 
 typedef struct __attribute__ ((__packed__)) {
 	unsigned char nonce[NONCE_SIZE];
@@ -123,9 +154,9 @@ typedef struct __attribute__ ((__packed__)) {
 #define get_drm_uids(d) (d.md.buf + d.md.num_regions)
 #define get_drm_song(d) ((char *)(&d.md) + d.md.md_size)
 
-
+// TODO: remove deprecated commands
 // shared buffer values
-enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK };
+enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
 enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
 
 
@@ -175,6 +206,7 @@ typedef struct {
     char username[USERNAME_SZ]; // logged on username
     char pin[MAX_PIN_SZ];       // logged on pin
     song_md song_md;            // current song metadata
+    purdue_md purdue_md;
     char drm_state;				// drm state
     u8 buffer_offset;
 } internal_state;
