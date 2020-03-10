@@ -40,6 +40,9 @@ def main(user_list, outfile):
             # Generate random 6 character hex for userID
             userID = token_hex(3)
 
+            # Prepend 0x to userID
+            userID = "0x" + userID
+
             # Extract username from entry
             userName = entry.split(":")[0]
 

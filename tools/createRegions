@@ -40,6 +40,9 @@ def main(region_list, file_name):
         # Generate random regionID
         regionID = token_hex(3)
 
+        # Prepend 0x to regionID
+        regionID = "0x" + regionID
+
         # Add region and regionID to region list
         regionList.append({
             "regionName": region,
