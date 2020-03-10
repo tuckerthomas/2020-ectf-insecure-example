@@ -273,6 +273,6 @@ def main():
     protected_song = ProtectedSong(args.infile, metadata)
     protected_song.encrypt_song("keys.json", args.outfile)
 
-#initites main()
+#inits main()
 if __name__ == '__main__':
     main()

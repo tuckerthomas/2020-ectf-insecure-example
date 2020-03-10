@@ -30,7 +30,7 @@
 #define MAX_PIN_SZ 8
 #define MAX_SONG_SZ (1<<25)
 
-#define HASHPIN_SZ 32
+#define HASHPIN_SZ 65
 #define SALT_SZ 7
 
 #define NONCE_SIZE 12

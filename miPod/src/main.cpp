@@ -566,6 +566,7 @@ void share_enc_song(std::string song_name, std::string& username) {
 
 	if (fd == NULL) {
 		std::cerr << "Could not open " << song_name << " to share:" << (errno) << std::endl;
+		return;
 	}
 
 	fseek(fd, ENC_WAVE_HEADER_SZ, SEEK_SET);
@@ -777,7 +778,7 @@ int main(int argc, char** argv) {
 				digital_out(arg1);
 			} else if (cmd == "share") {
 				share_song(arg1, arg2);
-			} else if (cmd == "enc_share") {
+			} else if (cmd == "share_enc") {
 				share_enc_song(arg1, arg2);
 			} else if (cmd == "play_enc_song") {
 				play_encrypted_song(arg1);

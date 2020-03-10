@@ -247,6 +247,21 @@ static size_t hextobin(unsigned char *dst, const char *src) {
 	return num;
 }
 
+void hash_pin(const char *pin, const char *salt, unsigned char *hashpinBuffer) {
+	char concatPin[MAX_PIN_SZ + SALT_SZ];
+
+	strncpy(concatPin, pin, MAX_PIN_SZ);
+	strncat(concatPin, salt, SALT_SZ);
+
+    br_sha256_context ctx;
+
+    br_sha256_init(&ctx); // TODO: Check
+
+    br_sha256_update(&ctx, concatPin, strlen(concatPin));
+
+    br_sha256_out(&ctx, hashpinBuffer);
+}
+
 unsigned int read_header(unsigned char *key, waveHeaderMetaStruct *waveHeaderMeta) {
 	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
 	unsigned char aad[12] = "wave_header";
@@ -415,12 +430,16 @@ void login() {
     } else {
         for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {
             // search for matching username
-            if (!strcmp((void*)c->username, device_users[(int)provisioned_uid[i].provisioned_userID].username)) {
+            if (!strcmp((void*)c->username, device_users[i].username)) {
                 
                 //MAKE FUNCTIONAL WITH HASHED VALUES
+            	unsigned char hashedPin[32];
+            	unsigned char binHash[32];
 
-                // check if pin matches
-                if (!strcmp((void*)c->pin, device_users[i].hashedPin)) {
+            	hextobin(binHash, device_users[i].hashedPin);
+
+            	hash_pin((const char *)c->pin, device_users[i].salt, hashedPin);
+            	if (!strncmp(hashedPin, binHash, 32)) {
                     //update states
                     s.logged_in = 1;
                     c->login_status = 1;
@@ -590,7 +609,10 @@ void share_enc_song(unsigned char *key) {
     u8 uid;
 
     encryptedMetadata metadata;
-    read_metadata(key, &metadata);
+    if (read_metadata(key, &metadata) != 0) {
+    	mb_printf("Metadta could not be validated \r\n");
+    	return;
+    }
 
     // Check if a user is logged in
     if (!s.logged_in) {
