@@ -49,7 +49,7 @@ def main(user_list, outfile):
             # Extract pin from user_list
             pin = entry.split(":")[1]
 
-            # Has pin and salt
+            # Hash pin and salt
             hashedPin = sha256((pin + salt).encode("utf-8")).hexdigest()
 
             # Add entry to user list
