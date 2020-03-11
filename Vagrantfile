@@ -39,7 +39,7 @@ end
 Vagrant.configure(2) do |config|
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://atlas.hashicorp.com/search.
-  config.vm.box = "bento/ubuntu-18.10"
+  config.vm.box = "generic/ubuntu1804"
 
   config.vm.hostname = $hostname
   config.vm.box_download_insecure = true
@@ -91,7 +91,7 @@ Vagrant.configure(2) do |config|
   # Store the version of the Vagrant configuration used to provision the VM.
   config.vm.provision "shell",
                       inline: "echo -n \"#{$vm_version}\" > /home/vagrant/.vm_version"
-  config.vm.provision "shell", path: "vagrant/install_xilinx_tools.sh"
+  #config.vm.provision "shell", path: "vagrant/install_xilinx_tools.sh"
 
   config.vm.provision "shell", inline: "echo 'Provisioning complete, please reboot the machine now.'"
 end
