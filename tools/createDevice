@@ -112,6 +112,16 @@ def main(valid_regions, valid_users, user_secrets, region_secrets, device_dir):
     # Create device specific key
     device_key = token_hex(32)
 
+    # Add Device key to the key dictionary
+    deviceKeyDict = {"key": device_key}
+
+    # Dump deviceKeyDict to json_device_key
+    jsonDeviceKey = dumps(deviceKeyDict)
+
+    # Write json_device_key 
+    with open("keys.json", mode="w") as jsonkeys:
+        jsonkeys.write(jsonDeviceKey)
+
     # Check if Device Directory Exists
     if not path.isdir(device_dir[0]):
 
