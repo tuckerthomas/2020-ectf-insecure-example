@@ -567,12 +567,14 @@ void share_enc_song(unsigned char *key) {
         return;
     } else if(uid == s.purdue_md.owner_id){
         mb_printf("User is owner\r\n");
+        c->song.wav_size = 0;
 		return;
 	}
 
 	for(int i = 0; i < s.purdue_md.num_users; i++){
-		if(uid == s.purdue_md.provisioned_usere[i]){
+		if(uid == s.purdue_md.provisioned_users[i]){
        		mb_printf("User is already shared\r\n");
+       		c->song.wav_size = 0;
 			return;
 		}
 	}
