@@ -350,7 +350,7 @@ void digital_out(std::string song_name) {
 }
 
 // attempts to share a song with a user
-void share_enc_song(std::string song_name, std::string& username) {
+void share_enc_song(std::string& song_name, std::string& username) {
 	FILE *fd;
 	unsigned int length;
 
@@ -410,9 +410,12 @@ void share_enc_song(std::string song_name, std::string& username) {
 	int endFileSZ = ftell(fd);
 	fseek(fd, 0, SEEK_SET);
 
-	FILE* fd2;
 	// open output file
-	fd2 = fopen(song_name.append(".temp").c_str(), "wb");
+	std::string temp_song_name = song_name;
+	temp_song_name.append(".temp");
+
+	FILE* fd2;
+	fd2 = fopen(temp_song_name.c_str(), "wb");
 
 	if (fd2 == NULL) {
 		std::cerr << "Failed to open file! Error = " << (errno) << "\r\n";
@@ -448,11 +451,13 @@ void share_enc_song(std::string song_name, std::string& username) {
 	// Delete old song file and rename new
 
 	if ( remove( song_name.c_str() ) != 0 ){
-		std::cerr << "Failed to rename file! Error = " << (errno) << "\r\n";
+		std::cerr << "Failed to remove file! Error = " << (errno) << "\r\n";
 		return;
 	}
 
-	if ( rename( song_name.append(".temp").c_str() , song_name.c_str() ) != 0 ){
+	std::cout << song_name << std::endl;
+
+	if ( rename( temp_song_name.c_str() , song_name.c_str() ) != 0 ){
 		std::cerr << "Failed to rename file! Error = " << (errno) << "\r\n";
 		return;
 	}
