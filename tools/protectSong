@@ -84,7 +84,7 @@ class ProtectedSong(object):
         keys_file = load(open(keys_loc, "r"))
 
         print("key " + keys_file["key"])
-        print("iv " + keys_file["iv"])
+        #print("iv " + keys_file["iv"])
         
         key = bytes.fromhex(keys_file["key"])
 
