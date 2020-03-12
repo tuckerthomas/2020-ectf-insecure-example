@@ -406,8 +406,6 @@ void share_enc_song(std::string song_name, std::string& username) {
 		return;
 	}
 
-	//song_name.c_str()
-
 	fseek(fd, 0, SEEK_END);
 	int endFileSZ = ftell(fd);
 	fseek(fd, 0, SEEK_SET);
@@ -446,6 +444,18 @@ void share_enc_song(std::string song_name, std::string& username) {
 
 	fclose(fd);
 	fclose(fd2);
+
+	// Delete old song file and rename new
+
+	if ( remove( song_name.c_str() ) != 0 ){
+		std::cerr << "Failed to rename file! Error = " << (errno) << "\r\n";
+		return;
+	}
+
+	if ( rename( song_name.append(".temp").c_str() , song_name.c_str() ) != 0 ){
+		std::cerr << "Failed to rename file! Error = " << (errno) << "\r\n";
+		return;
+	}
 
 	std::cout << "Finished writing file\r\n";
 }
