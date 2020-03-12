@@ -565,7 +565,19 @@ void share_enc_song(unsigned char *key) {
         mb_printf("Username not found\r\n");
         c->song.wav_size = 0;
         return;
-    }
+    } else if(uid == s.purdue_md.owner_id){
+        mb_printf("User is owner\r\n");
+		return;
+	}
+
+	for(int i = 0; i < s.purdue_md.num_users; i++){
+		if(uid == s.purdue_md.provisioned_usere[i]){
+       		mb_printf("User is already shared\r\n");
+			return;
+		}
+	}
+
+
     // Initialize empty struct
     // Create spot for new metadata
     static const purdue_md emptyMd;
