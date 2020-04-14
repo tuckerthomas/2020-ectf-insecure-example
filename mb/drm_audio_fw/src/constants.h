@@ -39,7 +39,7 @@
 #define META_DATA_ALLOC 4
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
-#define SONG_CHUNK_SZ 48000
+#define SONG_CHUNK_SZ 32000
 #define ENC_BUFFER_SZ 30
 #define ENC_CHUNK_SZ SONG_CHUNK_SZ + MAC_SIZE
 
@@ -159,6 +159,8 @@ typedef struct __attribute__ ((__packed__)) {
 enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
 enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
 
+enum play_states {DECRYPT, DECRYPT_TEMP, COPY, COPY_TEMP, REQUEST};
+
 
 // struct to interpret shared command channel
 typedef volatile struct __attribute__((__packed__)) {
@@ -209,6 +211,7 @@ typedef struct {
     purdue_md purdue_md;
     char drm_state;				// drm state
     u8 buffer_offset;
+    char play_state;			// Keeps track of the playing state
 } internal_state;
 
 

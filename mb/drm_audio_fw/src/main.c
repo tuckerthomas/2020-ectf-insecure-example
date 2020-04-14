@@ -203,21 +203,6 @@ int is_locked() {
     return locked;
 }
 
-
-// copy the local song metadata into buf in the correct format
-// returns the size of the metadata in buf (including the metadata size field)
-// song metadata should be loaded before call
-int gen_song_md(char *buf) {
-    buf[0] = ((5 + s.song_md.num_regions + s.song_md.num_users) / 2) * 2; // account for parity
-    buf[1] = s.song_md.owner_id;
-    buf[2] = s.song_md.num_regions;
-    buf[3] = s.song_md.num_users;
-    memcpy(buf + 4, s.song_md.rids, s.song_md.num_regions);
-    memcpy(buf + 4 + s.song_md.num_regions, s.song_md.uids, s.song_md.num_users);
-
-    return buf[0];
-}
-
 // Converts hex string to binary array
 static size_t hextobin(unsigned char *dst, const char *src) {
 	size_t num;
@@ -322,55 +307,20 @@ int read_metadata(unsigned char *key, encryptedMetadata *metadata) {
 }
 
 // Read a chunk of specific size and number, decrypt and copy into the FIFO buffer
-int read_chunks(unsigned char *key, int chunk_size, int chunk_num, int buffer_loc, u32 *fifo_ptr) {
-	static unsigned char encrypt_chunk_buffer[SONG_CHUNK_SZ];
+int read_chunks(unsigned char *chunk_buffer, unsigned char *key, int chunk_size, int chunk_num, int buffer_loc) {
 	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
 	int aad = chunk_num;
 	unsigned char tag_buffer[MAC_SIZE];
 
 	// Copy data to buffers
 	memcpy(nonce, (unsigned char *) &c->encSongBuffer[buffer_loc].nonce, NONCE_SIZE);
-	memcpy(encrypt_chunk_buffer, (unsigned char *) &c->encSongBuffer[buffer_loc].data, SONG_CHUNK_SZ);
+	memcpy(chunk_buffer, (unsigned char *) &c->encSongBuffer[buffer_loc].data, SONG_CHUNK_SZ);
 	memcpy(tag, (unsigned char *) &c->encSongBuffer[buffer_loc].tag, MAC_SIZE);
 
 	// Decrypt the chunk
-	br_poly1305_ctmul_run(key, nonce, encrypt_chunk_buffer, chunk_size, &aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 0);
+	br_poly1305_ctmul_run(key, nonce, chunk_buffer, chunk_size, &aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 0);
 
 	if (memcmp(tag_buffer, tag, MAC_SIZE) == 0) {
-		u32 counter = 0, rem, cp_num, cp_xfil_cnt, offset, dma_cnt, length;
-	    //mb_printf("Reading Audio File...");
-	    load_song_md();
-
-	    length = chunk_size;
-
-	    rem = length;
-		while (rem > 0) {
-			// calculate write size and offset
-			cp_num = (rem > CHUNK_SZ) ? CHUNK_SZ : rem;
-			offset = (counter++ % 2 == 0) ? 0 : CHUNK_SZ;
-
-			// do first mem cpy here into DMA BRAM
-			Xil_MemCpy(
-					(void *) (XPAR_MB_DMA_AXI_BRAM_CTRL_0_S_AXI_BASEADDR + offset),
-					(void *) (&encrypt_chunk_buffer + length - rem),
-					(u32) (cp_num));
-
-			cp_xfil_cnt = cp_num;
-
-			while (cp_xfil_cnt > 0) {
-				// polling while loop to wait for DMA to be ready
-				// DMA must run first for this to yield the proper state
-				// rem != length checks for first run
-				while (XAxiDma_Busy(&sAxiDma, XAXIDMA_DMA_TO_DEVICE) && rem != length && *fifo_ptr < (FIFO_CAP - 32));
-
-				// do DMA
-				dma_cnt = (FIFO_CAP - *fifo_ptr > cp_xfil_cnt) ? FIFO_CAP - *fifo_ptr : cp_xfil_cnt;
-				fnAudioPlay(sAxiDma, offset, dma_cnt);
-				cp_xfil_cnt -= dma_cnt;
-			}
-
-			rem -= cp_num;
-		}
 		return 0;
 	} else {
 		mb_printf("The tags are not the same :( \r\n");
@@ -579,7 +529,6 @@ void share_enc_song(unsigned char *key) {
 		}
 	}
 
-
     // Initialize empty struct
     // Create spot for new metadata
     static const purdue_md emptyMd;
@@ -633,6 +582,9 @@ void digital_out() {
 }
 
 void play_encrypted_song(unsigned char *key) {
+	// Setup buffers
+	static unsigned char chunk_buffer[SONG_CHUNK_SZ];
+
 	waveHeaderMetaStruct waveHeaderMeta;
 
 	mb_printf("Chunk size set to: %i", SONG_CHUNK_SZ);
@@ -658,8 +610,13 @@ void play_encrypted_song(unsigned char *key) {
 
 	// Initialize buffer offset;
 	int buffer_offset = 0;
+	int buffer_loc = 0;
+	int buffer_counter = 0;
+	int chunks_decrypted = 0;
 
-	u32 *fifo_fill = (u32 *)XPAR_FIFO_COUNT_AXI_GPIO_0_BASEADDR;
+	// DMA and fifo variables
+	int chunks_copied = 0;
+	int bytes_to_play = SONG_CHUNK_SZ;
 
 	while (1) {
 		//mb_printf("In Play loop\r\n");
@@ -682,30 +639,9 @@ void play_encrypted_song(unsigned char *key) {
 					return;
 				}
 			case READ_CHUNK:
-				for (int i = 0; i < ENC_BUFFER_SZ / 2; i++) {
-					int buffer_loc = i + ((ENC_BUFFER_SZ / 2) * buffer_offset);
-					if (chunk_counter < chunks_to_read) {
-						if (read_chunks(key, SONG_CHUNK_SZ, chunk_counter, buffer_loc, fifo_fill) == 0) {
-							chunk_counter++;
-						} else {
-							return;
-						}
-					} else if (chunk_counter == chunks_to_read) {
-						if (read_chunks(key, chunk_remainder, chunk_counter, buffer_loc, fifo_fill) == 0) {
-							break;
-						} else {
-							return;
-						}
-					} else {
-						return;
-					}
+				if (chunks_decrypted == 0) {
+					s.play_state = DECRYPT;
 				}
-				mb_printf("Finished reading %d chunks\r\n", ENC_BUFFER_SZ / 2);
-				// Toggle offset
-				c->buffer_offset = buffer_offset;
-				buffer_offset = toggle_offset(buffer_offset);
-				mb_printf("Requesting more chunks\r\n");
-				set_waiting_chunk();
 				break;
 			case STOP:
 				return;
@@ -713,8 +649,99 @@ void play_encrypted_song(unsigned char *key) {
 				break;
 			}
 		}
+
+		// Still in play while loop
+		if (c->cmd == READ_CHUNK) {
+			// first time run
+			if (chunks_decrypted == 0) {
+				buffer_loc = buffer_counter++ + ((ENC_BUFFER_SZ / 2) * buffer_offset);
+
+				if (read_chunks(chunk_buffer, key, SONG_CHUNK_SZ, chunk_counter, buffer_loc) == 0) {
+					chunk_counter++;
+					chunks_decrypted++;
+
+					// Start playing decrypted chunk
+					int cp_num = SONG_CHUNK_SZ;
+
+					// Check which buffer to copy from
+					unsigned char *encrypt_buffer_loc = chunk_buffer;
+
+					// do first mem cpy here into DMA BRAM
+					Xil_MemCpy(
+							(void *) (XPAR_MB_DMA_AXI_BRAM_CTRL_0_S_AXI_BASEADDR),
+							(void *) (encrypt_buffer_loc),
+							(u32) (cp_num));
+
+					buffer_loc = buffer_counter++ + ((ENC_BUFFER_SZ / 2) * buffer_offset);
+
+					if (read_chunks(chunk_buffer, key, SONG_CHUNK_SZ, chunk_counter, buffer_loc) == 0) {
+						chunk_counter++;
+						chunks_decrypted++;
+						fnAudioPlay(sAxiDma, 0, cp_num);
+						s.play_state = COPY;
+					}
+				}
+			}
+
+			if (s.play_state == DECRYPT) {
+				buffer_loc = buffer_counter++ + ((ENC_BUFFER_SZ / 2) * buffer_offset);
+				unsigned char *encrypt_buffer_loc = chunk_buffer;
+
+				if (read_chunks(encrypt_buffer_loc, key, SONG_CHUNK_SZ, chunk_counter, buffer_loc) == 0) {
+					chunk_counter++;
+					chunks_decrypted++;
+					s.play_state = COPY;
+				}
+			}
+
+			if (s.play_state == COPY) {
+				// Start playing decrypted chunk
+				u32 *fifo_fill = (u32 *) XPAR_FIFO_COUNT_AXI_GPIO_0_BASEADDR;
+
+				int cp_num = (bytes_to_play > CHUNK_SZ) ? CHUNK_SZ : bytes_to_play;
+				int offset = (chunk_counter % 2 == 0) ? 0 : CHUNK_SZ;
+
+				// Check which buffer to copy from
+				unsigned char *encrypt_buffer_loc = chunk_buffer;
+
+				// do first mem cpy here into DMA BRAM
+				Xil_MemCpy(
+						(void *) (XPAR_MB_DMA_AXI_BRAM_CTRL_0_S_AXI_BASEADDR + offset),
+						(void *) (encrypt_buffer_loc + SONG_CHUNK_SZ - bytes_to_play),
+						(u32) (cp_num));
+
+				while (XAxiDma_Busy(&sAxiDma, XAXIDMA_DMA_TO_DEVICE)
+						//&& bytes_to_play != SONG_CHUNK_SZ
+						&& *fifo_fill < (FIFO_CAP - 32)) {
+					mb_printf("Waiting for something \r\n");
+				}
+
+				fnAudioPlay(sAxiDma, offset, cp_num);
+
+				bytes_to_play -= cp_num;
+
+				if (bytes_to_play <= 0) {
+					bytes_to_play = SONG_CHUNK_SZ;
+					chunks_copied++;
+					s.play_state = DECRYPT;
+				}
+			}
+
+			if (chunk_counter % (ENC_BUFFER_SZ / 2) == 0) {
+				// Reset the buffer location counter
+				buffer_counter = 0;
+
+				// Toggle offset
+				c->buffer_offset = buffer_offset;
+				buffer_offset = toggle_offset(buffer_offset);
+
+				//mb_printf("Requesting more chunks\r\n");
+				//set_waiting_chunk();
+
+				//s.play_state = REQUEST;
+			}
+		}
 	}
-	// TODO: Check if song chunks can be played without file headers
 	// TODO: Make sure playing a song follows original checks, IE: user logged in/song is shared with them/they own the song/can be played in that region
 }
 

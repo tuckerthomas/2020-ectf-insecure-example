@@ -36,7 +36,7 @@ def decrypt_song(keys_loc, infile, outfile):
     wave_header_size = 44
     metadata_size_allocation = 4
     encrypted_wave_header_size = wave_header_size + metadata_size_allocation + mac_size
-    chunk_size = 48000
+    chunk_size = 32000
     
     print("Setting chunksize to " + str(chunk_size) + " bytes")
 

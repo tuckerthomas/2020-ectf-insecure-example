@@ -41,7 +41,8 @@
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + NONCE_SIZE + MAC_SIZE
 #define ENC_METADATA_SZ METADATA_SZ + NONCE_SIZE + MAC_SIZE
 #define META_DATA_ALLOC 4
-#define SONG_CHUNK_SZ 48000
+#define SONG_CHUNK_SZ 32000
+#define ENC_BUFFER_SZ 30
 
 // structs to import secrets.h JSON data into memory
 typedef struct {
@@ -63,8 +64,6 @@ typedef struct {
 typedef struct {
     uint32_t provisioned_regionID;
 } provisioned_region_struct;
-
-#define ENC_BUFFER_SZ 120
 
 // struct to interpret shared buffer as a query
 typedef struct {
@@ -168,7 +167,7 @@ typedef volatile struct __attribute__((__packed__)) {
         encryptedWaveheader encWaveHeader;
         encryptedMetadata encMetadata;
         encryptedSongChunk encSongChunk;
-        encryptedSongChunk encSongBuffer[60];
+        encryptedSongChunk encSongBuffer[ENC_BUFFER_SZ];
         char buf[MAX_SONG_SZ]; // sets correct size of cmd_channel for allocation
     };
 } cmd_channel;
