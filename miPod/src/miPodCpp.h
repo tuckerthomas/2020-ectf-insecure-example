@@ -67,8 +67,8 @@ typedef struct {
 
 // struct to interpret shared buffer as a query
 typedef struct {
-    int num_regions;
-    int num_users;
+	uint32_t num_regions;
+	uint32_t num_users;
     char owner[USERNAME_SZ];
     char regions[MAX_REGIONS * REGION_NAME_SZ];
     char users[MAX_USERS * USERNAME_SZ];
@@ -92,7 +92,7 @@ typedef struct __attribute__((__packed__)) {
 // packing values skip over non-relevant WAV metadata
 typedef struct __attribute__((__packed__)) {
     char packing1[4];
-    int file_size;
+    uint32_t file_size;
     char packing2[32];
     int wav_size;
     drm_md md;
@@ -109,7 +109,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 typedef struct __attribute__ ((__packed__)) {
 	unsigned char wav_header[WAVE_HEADER_SZ];
-	unsigned int metadata_size;
+	uint32_t metadata_size;
 } waveHeaderStruct;
 
 typedef struct __attribute__ ((__packed__)) {
@@ -153,12 +153,12 @@ typedef volatile struct __attribute__((__packed__)) {
     char padding;               // not used
     char username[USERNAME_SZ]; // stores logged in or attempted username
     char pin[MAX_PIN_SZ];       // stores logged in or attempted pin
-    int metadata_size;
-    int total_chunks;
-    int chunk_size;
-    int chunk_nums;
-    int chunk_remainder;
-    unsigned int buffer_offset;
+    uint32_t metadata_size;
+    uint32_t total_chunks;
+    uint32_t chunk_size;
+    uint32_t chunk_nums;
+    uint32_t chunk_remainder;
+    uint32_t buffer_offset;
 
     // shared buffer is either a drm song or a query
     union {

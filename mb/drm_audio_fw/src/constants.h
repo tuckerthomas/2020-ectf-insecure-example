@@ -74,8 +74,8 @@ struct color {
 
 // struct to interpret shared buffer as a query
 typedef struct {
-    int num_regions;
-    int num_users;
+    u32 num_regions;
+    u32 num_users;
     char owner[USERNAME_SZ];
     char regions[MAX_REGIONS * REGION_NAME_SZ];
     char users[MAX_USERS * USERNAME_SZ];
@@ -88,10 +88,10 @@ typedef struct {
 
 // struct to interpret drm metadata
 typedef struct __attribute__((__packed__)) {
-    char md_size;
-    char owner_id;
-    char num_regions;
-    char num_users;
+    u8 md_size;
+    u8 owner_id;
+    u8 num_regions;
+    u8 num_users;
     char buf[];
 } drm_md;
 
