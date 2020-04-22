@@ -69,7 +69,7 @@ Vagrant.configure(2) do |config|
     v.gui = $enable_gui_mode
     v.cpus = $num_cpus
     v.memory = $memory_size
-    config.disksize.size = '50GB'
+    config.disksize.size = '100GB'
 
     # set video ram to something useful
     v.customize ["modifyvm", :id, "--vram", "64"]
