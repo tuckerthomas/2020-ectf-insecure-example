@@ -141,8 +141,8 @@ typedef struct __attribute__ ((__packed__)) {
 
 // TODO: Remove deprecated commands
 // shared buffer values
-enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
-enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
+enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, WAIT_FOR_CHUNK, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
+enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_FILE_HEADER, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
 
 
 // struct to interpret shared command channel
@@ -162,8 +162,13 @@ typedef volatile struct __attribute__((__packed__)) {
 
     // shared buffer is either a drm song or a query
     union {
+    	// Non-encrypted
         songStruct song;
         queryStruct query;
+        unsigned char wav_header[WAVE_HEADER_SZ];
+        unsigned char songBuffer[ENC_BUFFER_SZ * SONG_CHUNK_SZ];
+
+        // Encrypted
         encryptedWaveheader encWaveHeader;
         encryptedMetadata encMetadata;
         encryptedSongChunk encSongChunk;

@@ -156,9 +156,8 @@ typedef struct __attribute__ ((__packed__)) {
 
 // TODO: remove deprecated commands
 // shared buffer values
-enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
-enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
-
+enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, WAIT_FOR_CHUNK, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
+enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_FILE_HEADER, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
 enum play_states {DECRYPT, DECRYPT_TEMP, COPY, COPY_TEMP, REQUEST};
 
 
@@ -179,12 +178,18 @@ typedef volatile struct __attribute__((__packed__)) {
 
     // shared buffer is either a drm song or a query
     union {
-        song song;
+        // Non-encrypted
+    	song song;
         query query;
+        waveHeaderStruct wave_header;
+        unsigned char songBuffer[ENC_BUFFER_SZ * SONG_CHUNK_SZ];
+
+        // Encrypted
         encryptedWaveheader encWaveHeaderMeta;
         encryptedMetadata encMetadata;
         encryptedSongChunk encSongChunk;
         encryptedSongChunk encSongBuffer[ENC_BUFFER_SZ];
+
         char buf[MAX_SONG_SZ]; // sets correct size of cmd_channel for allocation
     };
 } cmd_channel;

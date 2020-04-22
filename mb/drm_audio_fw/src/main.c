@@ -21,6 +21,7 @@
 // Bearssl Library
 #include <bearssl.h>
 
+// Chacha20+poly1305 implementation
 #include "chachapoly/chachapoly.h"
 
 //////////////////////// GLOBALS ////////////////////////
@@ -41,6 +42,7 @@ const struct color BLUE =   {0x0000, 0x0000, 0x01ff};
 #define set_working() change_state(WORKING, YELLOW)
 #define set_playing() change_state(PLAYING, GREEN)
 #define set_paused()  change_state(PAUSED, BLUE)
+#define set_waiting_file_header() change_state(WAITING_FILE_HEADER, YELLOW)
 #define set_waiting_metadata() change_state(WAITING_METADATA, YELLOW)
 #define set_waiting_chunk() change_state(WAITING_CHUNK, YELLOW)
 #define set_reading_chunk() change_state(READING_CHUNK, YELLOW)
@@ -297,7 +299,6 @@ int read_metadata(unsigned char *key, encryptedMetadata *metadata) {
 	memcpy(nonce, (unsigned char *)&(c->encMetadata.nonce), NONCE_SIZE);
 	memcpy(tag, (unsigned char *)&(c->encMetadata.tag), MAC_SIZE);
 	memcpy(metadata_buffer, (unsigned char *) &(c->encMetadata.metadata), METADATA_SZ);
-	//memcpy(metadata_buffer, get_metadata(c->encMetadata), metadata_size);
 
 	br_poly1305_ctmul_run(key, nonce, metadata_buffer, METADATA_SZ, aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 0);
 
@@ -579,30 +580,13 @@ void digital_out(unsigned char *key) {
 
 	waveHeaderMetaStruct waveHeaderMeta;
 
-	mb_printf("Chunk size set to: %i", SONG_CHUNK_SZ);
-
-	int metadata_size = read_header(key, &waveHeaderMeta);
-	if (metadata_size == -1) {
-		mb_printf("Song not valid!\r\n");
-		return;
-	}
-	c->metadata_size = metadata_size;
-
-	mb_printf("Waiting for metadata!\r\n");
-
-	set_waiting_metadata();
-
-	int chunks_to_read, chunk_counter = 1;
-	int chunk_remainder;
-
-	chunks_to_read = waveHeaderMeta.wave_header.wav_size / SONG_CHUNK_SZ;
-	chunk_remainder = waveHeaderMeta.wave_header.wav_size % SONG_CHUNK_SZ;
-
+	mb_printf("Chunk size set to: %i\r\n", SONG_CHUNK_SZ);
 	encryptedMetadata metadata;
 
-	// Boolean for 30s buffer
-	int song_owned = FALSE;						// Boolean for tracking 30s preview
-	int song_owned_byte_counter = PREVIEW_SZ;	// Byte counter to only play 30s
+	// Metadata information
+	int metadata_size = 0;
+	int chunks_to_read, chunk_counter = 1;
+	int chunk_remainder;
 
 	// TODO: change buffer_offset to boolean
 	// Initialize buffer offset;
@@ -610,17 +594,31 @@ void digital_out(unsigned char *key) {
 	int buffer_counter = 0;						// Counter for shared buffer location
 	int chunks_decrypted = 0;					// Number of chunks decrypted
 
-	// DMA and fifo variables
-	int chunks_copied = 0;						// Number of chunks copied to the DMA
-	int bytes_to_play = SONG_CHUNK_SZ;			// Number of bytes left to play
+	set_waiting_file_header();
 
 	while (1) {
-		//mb_printf("In Play loop\r\n");
 		while (InterruptProcessed) {
 			InterruptProcessed = FALSE;
 			set_working();
 
 			switch (c->cmd) {
+			case READ_HEADER:
+				metadata_size = read_header(key, &waveHeaderMeta);
+				if (metadata_size == -1) {
+					mb_printf("Song not valid!\r\n");
+					return;
+				}
+
+				c->metadata_size = metadata_size;
+
+				// copy wave header to buffer
+				memcpy((unsigned char *)&c->wave_header, &waveHeaderMeta.wave_header, WAVE_HEADER_SZ);
+
+				mb_printf("Waiting for metadata!\r\n");
+				set_waiting_metadata();
+
+				chunks_to_read = waveHeaderMeta.wave_header.wav_size / SONG_CHUNK_SZ;
+				chunk_remainder = waveHeaderMeta.wave_header.wav_size % SONG_CHUNK_SZ;
 			case READ_METADATA:
 				if (read_metadata(key, &metadata) == 0) {
 					c->total_chunks = chunks_to_read;
@@ -629,11 +627,9 @@ void digital_out(unsigned char *key) {
 					set_waiting_chunk();
 					break;
 				} else {
+					set_stopped();
 					return;
 				}
-			case STOP:
-				mb_printf("Stopping playback...\r\n");
-				return;
 			default:
 				break;
 			}
@@ -642,16 +638,12 @@ void digital_out(unsigned char *key) {
 		// Still in play while loop
 		if (c->cmd == READ_CHUNK) {
 			if (chunks_decrypted == 0) {
-				if (s.logged_in == TRUE && s.uid == s.purdue_md.owner_id) {
-					song_owned = TRUE;
-				} else {
-					mb_printf("User is not logged in, or does not own song\r\n");
-					mb_printf("Only playing 30s\r\n");
-				}
 				s.play_state = DECRYPT;
 			}
 
 			if (s.play_state == DECRYPT) {
+				set_reading_chunk();
+
 				int buffer_loc = buffer_counter++ + ((ENC_BUFFER_SZ / 2) * buffer_offset);
 
 				// Check if on the last chunk
@@ -661,48 +653,19 @@ void digital_out(unsigned char *key) {
 				}
 
 				if (read_chunks(&ctx, chunk_buffer, key, chunk_size, chunk_counter, buffer_loc) == 0) {
+					memcpy(chunk_buffer, (unsigned char *)&c->songBuffer[SONG_CHUNK_SZ * buffer_loc], chunk_size);
 					chunk_counter++;
 					chunks_decrypted++;
-					s.play_state = COPY;
-				}
-			}
 
-			if (s.play_state == COPY) {
-				// Start playing decrypted chunk
-				int cp_num = (bytes_to_play > CHUNK_SZ) ? CHUNK_SZ : bytes_to_play;
-
-				// Check if on the last chunk
-				// This is plus one because it gets increase after decrypting the chunk
-				if (chunk_counter + 1 == chunks_to_read) {
-					cp_num = chunk_remainder;
-				}
-
-				// Check if playing 30seconds
-				if (song_owned == FALSE && song_owned_byte_counter <= cp_num) {
-					cp_num = song_owned_byte_counter;
-				}
-
-				// Copy to Shared buffer
-
-				bytes_to_play -= cp_num;
-				song_owned_byte_counter -= cp_num;
-
-				if (bytes_to_play <= 0) {
-					bytes_to_play = SONG_CHUNK_SZ;
-					chunks_copied++;
-					s.play_state = DECRYPT;
-				}
-
-				// STOP PLAYBACK
-				if (chunk_counter + 1 == chunks_to_read || song_owned_byte_counter == 0) {
-					set_stopped();
-					return;
+					if (chunk_counter + 1 == chunks_to_read) {
+						set_stopped();
+						return;
+					}
 				}
 			}
 
 			// Request more chunks
 			if (s.play_state == REQUEST) {
-				// TODO: command miPod to copy out of buffer, then fill it with more chunks
 				mb_printf("Requesting more chunks\r\n");
 				set_waiting_chunk();
 
@@ -730,7 +693,10 @@ void digital_out(unsigned char *key) {
 			}
 		}
 	}
+
 	mb_printf("Song dump finished\r\n");
+	set_stopped();
+	return;
 }
 
 void play_encrypted_song(unsigned char *key) {
@@ -741,7 +707,7 @@ void play_encrypted_song(unsigned char *key) {
 
 	waveHeaderMetaStruct waveHeaderMeta;
 
-	mb_printf("Chunk size set to: %i", SONG_CHUNK_SZ);
+	mb_printf("Chunk size set to: %i\r\n", SONG_CHUNK_SZ);
 
 	int metadata_size = read_header(key, &waveHeaderMeta);
 	if (metadata_size == -1) {
@@ -959,7 +925,7 @@ int main() {
     set_stopped();
 
     // clear command channel
-    memset((void*)c, 0, sizeof(cmd_channel));
+    memset((void *)c, 0, sizeof(cmd_channel));
 
     mb_printf("Audio DRM Module has Booted\n\r");
     // Load keys/secrets
