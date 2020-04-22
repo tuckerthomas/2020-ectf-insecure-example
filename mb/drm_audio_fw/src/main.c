@@ -318,15 +318,13 @@ int read_metadata(unsigned char *key, encryptedMetadata *metadata) {
 int read_chunks(struct chachapoly_ctx *ctx, unsigned char *chunk_buffer, unsigned char *key, int chunk_size, int chunk_num, int buffer_loc) {
 	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
 	int aad = chunk_num;
-	unsigned char tag_buffer[MAC_SIZE];
 
 	// Copy data to buffers
 	memcpy(nonce, (unsigned char *) &c->encSongBuffer[buffer_loc].nonce, NONCE_SIZE);
-	memcpy(chunk_buffer, (unsigned char *) &c->encSongBuffer[buffer_loc].data, SONG_CHUNK_SZ);
 	memcpy(tag, (unsigned char *) &c->encSongBuffer[buffer_loc].tag, MAC_SIZE);
 
 	// Decrypt the chunk
-	int ret = chachapoly_crypt(ctx, nonce, &aad, sizeof(aad), (unsigned char *)&c->encSongBuffer[buffer_loc].data, chunk_size, chunk_buffer, tag, MAC_SIZE, 1);
+	int ret = chachapoly_crypt(ctx, nonce, &aad, sizeof(aad), (unsigned char *)&c->encSongBuffer[buffer_loc].data, chunk_size, chunk_buffer, tag, MAC_SIZE, 0);
 
 	if (ret == CHACHAPOLY_OK) {
 		return 0;
@@ -574,12 +572,169 @@ void share_enc_song(unsigned char *key) {
 
 // removes DRM data from song for digital out
 void digital_out(unsigned char *key) {
+	// TODO: work on requesting new chunks/refill buffer
+
+	struct chachapoly_ctx ctx;
+	chachapoly_init(&ctx, key, 256);
+
+	waveHeaderMetaStruct waveHeaderMeta;
+
+	mb_printf("Chunk size set to: %i", SONG_CHUNK_SZ);
+
+	int metadata_size = read_header(key, &waveHeaderMeta);
+	if (metadata_size == -1) {
+		mb_printf("Song not valid!\r\n");
+		return;
+	}
+	c->metadata_size = metadata_size;
+
+	mb_printf("Waiting for metadata!\r\n");
+
+	set_waiting_metadata();
+
+	int chunks_to_read, chunk_counter = 1;
+	int chunk_remainder;
+
+	chunks_to_read = waveHeaderMeta.wave_header.wav_size / SONG_CHUNK_SZ;
+	chunk_remainder = waveHeaderMeta.wave_header.wav_size % SONG_CHUNK_SZ;
+
+	encryptedMetadata metadata;
+
+	// Boolean for 30s buffer
+	int song_owned = FALSE;						// Boolean for tracking 30s preview
+	int song_owned_byte_counter = PREVIEW_SZ;	// Byte counter to only play 30s
+
+	// TODO: change buffer_offset to boolean
+	// Initialize buffer offset;
+	int buffer_offset = 0;						// Boolean for shared buffer offset
+	int buffer_counter = 0;						// Counter for shared buffer location
+	int chunks_decrypted = 0;					// Number of chunks decrypted
+
+	// DMA and fifo variables
+	int chunks_copied = 0;						// Number of chunks copied to the DMA
+	int bytes_to_play = SONG_CHUNK_SZ;			// Number of bytes left to play
+
+	while (1) {
+		//mb_printf("In Play loop\r\n");
+		while (InterruptProcessed) {
+			InterruptProcessed = FALSE;
+			set_working();
+
+			switch (c->cmd) {
+			case READ_METADATA:
+				if (read_metadata(key, &metadata) == 0) {
+					c->total_chunks = chunks_to_read;
+					c->chunk_size = SONG_CHUNK_SZ;
+					c->chunk_remainder = chunk_remainder;
+					set_waiting_chunk();
+					break;
+				} else {
+					return;
+				}
+			case STOP:
+				mb_printf("Stopping playback...\r\n");
+				return;
+			default:
+				break;
+			}
+		}
+
+		// Still in play while loop
+		if (c->cmd == READ_CHUNK) {
+			if (chunks_decrypted == 0) {
+				if (s.logged_in == TRUE && s.uid == s.purdue_md.owner_id) {
+					song_owned = TRUE;
+				} else {
+					mb_printf("User is not logged in, or does not own song\r\n");
+					mb_printf("Only playing 30s\r\n");
+				}
+				s.play_state = DECRYPT;
+			}
+
+			if (s.play_state == DECRYPT) {
+				int buffer_loc = buffer_counter++ + ((ENC_BUFFER_SZ / 2) * buffer_offset);
+
+				// Check if on the last chunk
+				int chunk_size = SONG_CHUNK_SZ;
+				if (chunk_counter == chunks_to_read) {
+					chunk_size = chunk_remainder;
+				}
+
+				if (read_chunks(&ctx, chunk_buffer, key, chunk_size, chunk_counter, buffer_loc) == 0) {
+					chunk_counter++;
+					chunks_decrypted++;
+					s.play_state = COPY;
+				}
+			}
+
+			if (s.play_state == COPY) {
+				// Start playing decrypted chunk
+				int cp_num = (bytes_to_play > CHUNK_SZ) ? CHUNK_SZ : bytes_to_play;
+
+				// Check if on the last chunk
+				// This is plus one because it gets increase after decrypting the chunk
+				if (chunk_counter + 1 == chunks_to_read) {
+					cp_num = chunk_remainder;
+				}
+
+				// Check if playing 30seconds
+				if (song_owned == FALSE && song_owned_byte_counter <= cp_num) {
+					cp_num = song_owned_byte_counter;
+				}
+
+				// Copy to Shared buffer
+
+				bytes_to_play -= cp_num;
+				song_owned_byte_counter -= cp_num;
+
+				if (bytes_to_play <= 0) {
+					bytes_to_play = SONG_CHUNK_SZ;
+					chunks_copied++;
+					s.play_state = DECRYPT;
+				}
+
+				// STOP PLAYBACK
+				if (chunk_counter + 1 == chunks_to_read || song_owned_byte_counter == 0) {
+					set_stopped();
+					return;
+				}
+			}
+
+			// Request more chunks
+			if (s.play_state == REQUEST) {
+				// TODO: command miPod to copy out of buffer, then fill it with more chunks
+				mb_printf("Requesting more chunks\r\n");
+				set_waiting_chunk();
+
+				// Start decrypting more chunks
+				s.play_state = DECRYPT;
+			}
+
+			// Check if reached the end of the command buffer
+			// Then Alternate chunk buffer location
+			if (buffer_counter == (ENC_BUFFER_SZ / 2)) {
+				// Reset the buffer location counter
+				buffer_counter = 0;
+
+				// Toggle offset
+				c->buffer_offset = buffer_offset;
+				buffer_offset = toggle_offset(buffer_offset);
+
+				s.play_state = REQUEST;
+			}
+
+			// Check if shouldn't be playing the song anymore
+			if (c->drm_state == STOPPED) {
+				set_stopped();
+				break;
+			}
+		}
+	}
 	mb_printf("Song dump finished\r\n");
 }
 
 void play_encrypted_song(unsigned char *key) {
-	// TODO: work on 30s buffer
-	// TODO: work on requesting new chunks/refill buffer
+	// TODO: implement restart
 
 	struct chachapoly_ctx ctx;
 	chachapoly_init(&ctx, key, 256);
@@ -620,15 +775,11 @@ void play_encrypted_song(unsigned char *key) {
 	// DMA and fifo variables
 	int chunks_copied = 0;
 	int bytes_to_play = SONG_CHUNK_SZ;
-	int offset_counter = 0;
 
 	while (1) {
 		//mb_printf("In Play loop\r\n");
 		while (InterruptProcessed) {
 			InterruptProcessed = FALSE;
-
-			mb_printf("Processing interruption\r\n");
-
 			set_working();
 
 			switch (c->cmd) {
@@ -677,7 +828,6 @@ void play_encrypted_song(unsigned char *key) {
 
 			if (s.play_state == DECRYPT) {
 				buffer_loc = buffer_counter++ + ((ENC_BUFFER_SZ / 2) * buffer_offset);
-				unsigned char *encrypt_buffer_loc = chunk_buffer;
 
 				int chunk_size = SONG_CHUNK_SZ;
 
@@ -686,7 +836,7 @@ void play_encrypted_song(unsigned char *key) {
 					chunk_size = chunk_remainder;
 				}
 
-				if (read_chunks(&ctx, encrypt_buffer_loc, key, chunk_size, chunk_counter, buffer_loc) == 0) {
+				if (read_chunks(&ctx, chunk_buffer, key, chunk_size, chunk_counter, buffer_loc) == 0) {
 					chunk_counter++;
 					chunks_decrypted++;
 					s.play_state = COPY;
@@ -708,21 +858,18 @@ void play_encrypted_song(unsigned char *key) {
 
 				// Check if playing 30seconds
 				if (song_owned == FALSE && song_owned_byte_counter <= cp_num) {
-					cp_num = SONG_CHUNK_SZ;
+					cp_num = song_owned_byte_counter;
 				}
-
-				// Check which buffer to copy from
-				unsigned char *encrypt_buffer_loc = chunk_buffer;
 
 				// do first mem cpy here into DMA BRAM
 				Xil_MemCpy(
 						(void *) (XPAR_MB_DMA_AXI_BRAM_CTRL_0_S_AXI_BASEADDR + offset),
-						(void *) (encrypt_buffer_loc + SONG_CHUNK_SZ - bytes_to_play),
+						(void *) (chunk_buffer + SONG_CHUNK_SZ - bytes_to_play),
 						(u32) (cp_num));
 
 				while (XAxiDma_Busy(&sAxiDma, XAXIDMA_DMA_TO_DEVICE)
 						&& bytes_to_play != SONG_CHUNK_SZ
-						//&& *fifo_fill < (FIFO_CAP - 32)
+						&& *fifo_fill < (FIFO_CAP - 32)
 						) {
 					mb_printf("Waiting for something \r\n");
 				}
@@ -739,7 +886,7 @@ void play_encrypted_song(unsigned char *key) {
 				}
 
 				// STOP PLAYBACK
-				if (chunk_counter + 1 == chunks_to_read) {
+				if (chunk_counter + 1 == chunks_to_read || song_owned_byte_counter == 0) {
 					set_stopped();
 					return;
 				}

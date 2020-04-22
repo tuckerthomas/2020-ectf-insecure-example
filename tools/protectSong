@@ -43,7 +43,7 @@ class ProtectedSong(object):
 
     def encrypt_song(self, keys_loc, outfile):
         # Configuration Variables
-        chunk_size = 8000
+        chunk_size = 16000
         hash_byte_size = 12     # Take 12 bytes of a 256 bit hash
         wave_header_size = 44   # http://soundfile.sapp.org/doc/WaveFormat/
         aad_size = 4            # Use 4 bytes to store aad size

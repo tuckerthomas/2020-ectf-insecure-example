@@ -39,8 +39,8 @@
 #define META_DATA_ALLOC 4
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
-#define SONG_CHUNK_SZ 8000
-#define ENC_BUFFER_SZ 120
+#define SONG_CHUNK_SZ 16000
+#define ENC_BUFFER_SZ 60
 #define ENC_CHUNK_SZ SONG_CHUNK_SZ + MAC_SIZE
 
 // structs to import secrets.h JSON data into memory
