@@ -21,6 +21,8 @@
 // Bearssl Library
 #include <bearssl.h>
 
+#include "chachapoly/chachapoly.h"
+
 //////////////////////// GLOBALS ////////////////////////
 
 // audio DMA access
@@ -313,7 +315,7 @@ int read_metadata(unsigned char *key, encryptedMetadata *metadata) {
 }
 
 // Read a chunk of specific size and number, decrypt and copy into the FIFO buffer
-int read_chunks(unsigned char *chunk_buffer, unsigned char *key, int chunk_size, int chunk_num, int buffer_loc) {
+int read_chunks(struct chachapoly_ctx *ctx, unsigned char *chunk_buffer, unsigned char *key, int chunk_size, int chunk_num, int buffer_loc) {
 	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
 	int aad = chunk_num;
 	unsigned char tag_buffer[MAC_SIZE];
@@ -324,9 +326,9 @@ int read_chunks(unsigned char *chunk_buffer, unsigned char *key, int chunk_size,
 	memcpy(tag, (unsigned char *) &c->encSongBuffer[buffer_loc].tag, MAC_SIZE);
 
 	// Decrypt the chunk
-	br_poly1305_ctmul_run(key, nonce, chunk_buffer, chunk_size, &aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 0);
+	int ret = chachapoly_crypt(ctx, nonce, &aad, sizeof(aad), (unsigned char *)&c->encSongBuffer[buffer_loc].data, chunk_size, chunk_buffer, tag, MAC_SIZE, 1);
 
-	if (memcmp(tag_buffer, tag, MAC_SIZE) == 0) {
+	if (ret == CHACHAPOLY_OK) {
 		return 0;
 	} else {
 		mb_printf("The tags are not the same :( \r\n");
@@ -579,6 +581,9 @@ void play_encrypted_song(unsigned char *key) {
 	// TODO: work on 30s buffer
 	// TODO: work on requesting new chunks/refill buffer
 
+	struct chachapoly_ctx ctx;
+	chachapoly_init(&ctx, key, 256);
+
 	waveHeaderMetaStruct waveHeaderMeta;
 
 	mb_printf("Chunk size set to: %i", SONG_CHUNK_SZ);
@@ -681,7 +686,7 @@ void play_encrypted_song(unsigned char *key) {
 					chunk_size = chunk_remainder;
 				}
 
-				if (read_chunks(encrypt_buffer_loc, key, chunk_size, chunk_counter, buffer_loc) == 0) {
+				if (read_chunks(&ctx, encrypt_buffer_loc, key, chunk_size, chunk_counter, buffer_loc) == 0) {
 					chunk_counter++;
 					chunks_decrypted++;
 					s.play_state = COPY;
@@ -693,7 +698,7 @@ void play_encrypted_song(unsigned char *key) {
 				u32 *fifo_fill = (u32 *) XPAR_FIFO_COUNT_AXI_GPIO_0_BASEADDR;
 
 				int cp_num = (bytes_to_play > CHUNK_SZ) ? CHUNK_SZ : bytes_to_play;
-				int offset = offset_counter++ * (CHUNK_SZ);
+				int offset = (chunks_copied % 2) ? 0 : CHUNK_SZ;
 
 				// Check if on the last chunk
 				// This is plus one because it gets increase after decrypting the chunk
@@ -706,11 +711,6 @@ void play_encrypted_song(unsigned char *key) {
 					cp_num = SONG_CHUNK_SZ;
 				}
 
-				// TODO: CHange back
-				if (offset_counter == 2) {
-					offset_counter = 0;
-				}
-
 				// Check which buffer to copy from
 				unsigned char *encrypt_buffer_loc = chunk_buffer;
 
@@ -720,13 +720,12 @@ void play_encrypted_song(unsigned char *key) {
 						(void *) (encrypt_buffer_loc + SONG_CHUNK_SZ - bytes_to_play),
 						(u32) (cp_num));
 
-				// TODO: uncomment
-				/*while (XAxiDma_Busy(&sAxiDma, XAXIDMA_DMA_TO_DEVICE)
+				while (XAxiDma_Busy(&sAxiDma, XAXIDMA_DMA_TO_DEVICE)
 						&& bytes_to_play != SONG_CHUNK_SZ
-						&& *fifo_fill < (FIFO_CAP - 32)
+						//&& *fifo_fill < (FIFO_CAP - 32)
 						) {
 					mb_printf("Waiting for something \r\n");
-				} */
+				}
 
 				fnAudioPlay(sAxiDma, offset, cp_num);
 
