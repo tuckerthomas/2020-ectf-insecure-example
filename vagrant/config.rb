@@ -16,10 +16,10 @@ end
 
 # Configure the VM name within the provider. VM instances are identified using
 # their unique names.
-$vm_name = "ectf-2020"
+$vm_name = "ectf-2020-ubuntu1804"
 
 # Specify the number of CPU cores to allocate to the VM.
-$num_cpus = 2
+$num_cpus = 4
 
 # Specify the amount of RAM to allocate to the VM (in MB).
 $memory_size = 4096
@@ -33,7 +33,7 @@ $enable_gui_mode = true
 $hostname = "vagrant-eCTF"
 
 # Set to 'true' to enable bridged networking.
-$network_bridged = false
+$network_bridged = true
 
 # Set to the desired static IP address to be used by the bridged network
 # interface. Leave empty to use DHCP. Ignored if $network_bridged == false.

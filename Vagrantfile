@@ -39,7 +39,7 @@ end
 Vagrant.configure(2) do |config|
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://atlas.hashicorp.com/search.
-  config.vm.box = "bento/ubuntu-18.10"
+  config.vm.box = "generic/ubuntu1804"
 
   config.vm.hostname = $hostname
   config.vm.box_download_insecure = true
@@ -69,7 +69,7 @@ Vagrant.configure(2) do |config|
     v.gui = $enable_gui_mode
     v.cpus = $num_cpus
     v.memory = $memory_size
-    config.disksize.size = '50GB'
+    config.disksize.size = '100GB'
 
     # set video ram to something useful
     v.customize ["modifyvm", :id, "--vram", "64"]
