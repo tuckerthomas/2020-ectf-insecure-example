@@ -39,8 +39,8 @@
 #define META_DATA_ALLOC 4
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
-#define SONG_CHUNK_SZ 32000
-#define ENC_BUFFER_SZ 30
+#define SONG_CHUNK_SZ 8000
+#define ENC_BUFFER_SZ 120
 #define ENC_CHUNK_SZ SONG_CHUNK_SZ + MAC_SIZE
 
 // structs to import secrets.h JSON data into memory
@@ -209,6 +209,7 @@ typedef struct {
     char pin[MAX_PIN_SZ];       // logged on pin
     song_md song_md;            // current song metadata
     purdue_md purdue_md;
+    u32 total_bytes_to_play;	// Total number of bytes in a song
     char drm_state;				// drm state
     u8 buffer_offset;
     char play_state;			// Keeps track of the playing state
