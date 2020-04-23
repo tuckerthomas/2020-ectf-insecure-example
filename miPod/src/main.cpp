@@ -575,18 +575,18 @@ void play_encrypted_song(std::string song_name) {
 		continue;
 	}
 	std::cout << "Metadata Processed!" << std::endl;
-	while (c->drm_state == STOPPED) continue;
-	while (c->drm_state == WORKING) continue;
 
 	std::cout << "Check if we can send a song chunk" << std::endl;
-	if (c->drm_state == WAITING_CHUNK) {
 
-		// Start Thread!
+	send_command(WAIT_FOR_CHUNK);
 
-		pthread_t chunk_read_thread;
-
-		pthread_create(&chunk_read_thread, NULL, read_enc_chunk_thread, fp);
+	std::cout << "Initialize buffer" << std::endl;
+	for (int i = 0; i < ENC_BUFFER_SZ; i++) {
+		int chunk_size = c->chunk_size;
+		read_enc_chunk(fp, chunk_size, i);
 	}
+	std::cout << "Buffer finished" << std::endl;
+	send_command(READ_CHUNK);
 
 	// play loop
 	while (1) {
@@ -642,6 +642,30 @@ void play_encrypted_song(std::string song_name) {
 		} else {
 			std::cout << "Please enter a command." << std::endl;
 			print_playback_help();
+		}
+
+		if (c->drm_state == WAITING_CHUNK) {
+			std::cout << "Updating buffer" << std::endl;
+
+			// Read encrypted chunks from rfp
+			for (int i = 0; i < ENC_BUFFER_SZ / 2; i++) {
+				int chunk_size = c->chunk_size;
+
+				// Check for offset
+				int buffer_loc = i + ((ENC_BUFFER_SZ / 2) * c->buffer_offset);
+
+				read_enc_chunk(fp, chunk_size, buffer_loc);
+			}
+
+			std::cout << "Updated buffer" << std::endl;
+			send_command(READ_CHUNK);
+		}
+
+		if (c->drm_state == READING_CHUNK)
+			continue;
+
+		if (c->drm_state == STOPPED) {
+			break;
 		}
 	}
 
