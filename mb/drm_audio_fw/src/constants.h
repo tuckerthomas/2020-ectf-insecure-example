@@ -175,14 +175,14 @@ typedef volatile struct __attribute__((__packed__)) {
     u32 chunk_nums;
     u32 chunk_remainder;
     u32 buffer_offset;
+    waveHeaderStruct wave_header;
+    unsigned char songBuffer[ENC_BUFFER_SZ * SONG_CHUNK_SZ];
 
     // shared buffer is either a drm song or a query
     union {
         // Non-encrypted
     	song song;
         query query;
-        waveHeaderStruct wave_header;
-        unsigned char songBuffer[ENC_BUFFER_SZ * SONG_CHUNK_SZ];
 
         // Encrypted
         encryptedWaveheader encWaveHeaderMeta;

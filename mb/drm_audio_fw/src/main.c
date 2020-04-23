@@ -579,9 +579,9 @@ void digital_out(unsigned char *key) {
 	chachapoly_init(&ctx, key, 256);
 
 	waveHeaderMetaStruct waveHeaderMeta;
+	encryptedMetadata metadata;
 
 	mb_printf("Chunk size set to: %i\r\n", SONG_CHUNK_SZ);
-	encryptedMetadata metadata;
 
 	// Metadata information
 	int metadata_size = 0;
@@ -619,6 +619,7 @@ void digital_out(unsigned char *key) {
 
 				chunks_to_read = waveHeaderMeta.wave_header.wav_size / SONG_CHUNK_SZ;
 				chunk_remainder = waveHeaderMeta.wave_header.wav_size % SONG_CHUNK_SZ;
+				break;
 			case READ_METADATA:
 				if (read_metadata(key, &metadata) == 0) {
 					c->total_chunks = chunks_to_read;
@@ -653,7 +654,7 @@ void digital_out(unsigned char *key) {
 				}
 
 				if (read_chunks(&ctx, chunk_buffer, key, chunk_size, chunk_counter, buffer_loc) == 0) {
-					memcpy(chunk_buffer, (unsigned char *)&c->songBuffer[SONG_CHUNK_SZ * buffer_loc], chunk_size);
+					memcpy((unsigned char *)&c->songBuffer[SONG_CHUNK_SZ * buffer_loc], chunk_buffer, chunk_size);
 					chunk_counter++;
 					chunks_decrypted++;
 

@@ -130,6 +130,8 @@ void read_enc_metadata(FILE *fp, int metadata_size) {
 
 	memcpy((void *)&(c->encMetadata), meta_buffer, metadata_total_size);
 
+	std::cout << "Last byte: " << c->encMetadata.metadata[METADATA_SZ - 1] << std::endl;
+
 	send_command(READ_METADATA);
 
 	return;
@@ -144,8 +146,6 @@ void read_enc_chunk(FILE *fp, int chunk_size, int buffer_loc) {
 
 	memcpy((void *)&(c->encSongBuffer[buffer_loc]), buffer, chunk_total_size);
 
-	send_command(READ_CHUNK);
-
 	return;
 }
 
@@ -158,7 +158,8 @@ void *read_enc_chunk_thread(void *fp) {
 		read_enc_chunk((FILE *) fp, chunk_size, i);
 	}
 	std::cout << "Buffer finished" << std::endl;
-	c->drm_state = READING_CHUNK; // not the best idea but TODO: Change
+
+	send_command(READ_CHUNK);
 
 	do {
 		while(c->drm_state == WAITING_CHUNK) {
@@ -171,7 +172,7 @@ void *read_enc_chunk_thread(void *fp) {
 				read_enc_chunk((FILE *)fp, chunk_size, buffer_loc);
 			}
 			std::cout << "Updated buffer" << std::endl;
-			c->drm_state = READING_CHUNK; // not the best idea but TODO: Change
+			send_command(READ_CHUNK);
 		}
 		while(c->drm_state == READING_CHUNK) continue;
 		if (c->drm_state == STOPPED) {
@@ -313,8 +314,9 @@ void digital_out(std::string song_name) {
 		continue; // wait for DRM to dump file
 
 	std::string song_name_dout = song_name;
+	song_name_dout.append(".dout");
 
-	std::cout << "Saving to " << song_name_dout.append(".dout") << std::endl;
+	std::cout << "Saving to " << song_name_dout << std::endl;
 
 	// Open pointer for digital out file
 	FILE *wfp = fopen(song_name_dout.c_str(), "wb");
@@ -330,9 +332,11 @@ void digital_out(std::string song_name) {
 	if (c->drm_state == WAITING_FILE_HEADER) {
 		// load file into shared buffer
 		rfp = read_enc_file_header(song_name);
-		if (rfp == NULL) {
-			return;
-		}
+	}
+
+	if (rfp == NULL) {
+		std::cout << "Could not read file" << std::endl;
+		return;
 	}
 
 	// Wait for new command;
@@ -346,6 +350,7 @@ void digital_out(std::string song_name) {
 		std::cout << "Start reading metadata!" << std::endl;
 		int metadata_size = c->metadata_size;
 		read_enc_metadata(rfp, metadata_size);
+		std::cout << "Metadata read!" << std::endl;
 	}
 
 	std::cout << "Waiting for metadata to process" << std::endl;
@@ -353,7 +358,7 @@ void digital_out(std::string song_name) {
 		continue;
 	}
 
-	//send_command(WAIT_FOR_CHUNK);
+	send_command(WAIT_FOR_CHUNK);
 
 	std::cout << "Metadata Processed!" << std::endl;
 
@@ -363,13 +368,18 @@ void digital_out(std::string song_name) {
 		read_enc_chunk(rfp, chunk_size, i);
 	}
 	std::cout << "Buffer finished" << std::endl;
+	send_command(READ_CHUNK);
+
+	int total_chunks_written = 0;
 
 	while (1) {
 		while (c->drm_state == WAITING_CHUNK) {
+			std::cout << "Updating buffer" << std::endl;
 			// Read decrypted chunks from buffer
 			for (int i = 0; i < ENC_BUFFER_SZ / 2; i++) {
-				int buffer_loc = i + ((ENC_BUFFER_SZ / 2) * !c->buffer_offset);
-				fread((unsigned char *) &c->songBuffer[SONG_CHUNK_SZ * buffer_loc], SONG_CHUNK_SZ, 1, wfp);
+				int buffer_loc = i + ((ENC_BUFFER_SZ / 2) * c->buffer_offset);
+				fwrite((unsigned char *) &c->songBuffer[SONG_CHUNK_SZ * buffer_loc], SONG_CHUNK_SZ, 1, wfp);
+				total_chunks_written++;
 			}
 
 			// Read encrypted chunks from rfp
@@ -381,19 +391,40 @@ void digital_out(std::string song_name) {
 
 				read_enc_chunk(rfp, chunk_size, buffer_loc);
 			}
+
 			std::cout << "Updated buffer" << std::endl;
-			c->drm_state = READING_CHUNK; // not the best idea but TODO: Change
+			send_command(READ_CHUNK);
 		}
 
 		while (c->drm_state == READING_CHUNK)
 			continue;
 
 		if (c->drm_state == STOPPED) {
+			// Read out last buffer
+			// buffer offset doesn't get toggled before the song finished decrypting its last buffer
+
+			// Account for uneven
+			int last_chunks = (c->total_chunks % (ENC_BUFFER_SZ / 2) == 0) ? ENC_BUFFER_SZ / 2 : c->total_chunks % (ENC_BUFFER_SZ / 2);
+			for (int i = 0; i < last_chunks; i++) {
+				int buffer_loc = i + ((ENC_BUFFER_SZ / 2) * !c->buffer_offset);
+
+				if (i == last_chunks - 1) {
+					std::cout << "Writing last chunk!" << std::endl;
+					fwrite((unsigned char *) &c->songBuffer[SONG_CHUNK_SZ * buffer_loc], c->chunk_remainder, 1, wfp);
+				} else {
+					fwrite((unsigned char *) &c->songBuffer[SONG_CHUNK_SZ * buffer_loc], SONG_CHUNK_SZ, 1, wfp);
+				}
+
+				total_chunks_written++;
+			}
 			break;
 		}
 	}
 
 	std::cout << "Song dump finished" << std::endl;
+	std::cout << "Wrote " << total_chunks_written << " number of chunks" << std::endl;
+	fclose(wfp);
+	fclose(rfp);
 	return;
 
 }
@@ -541,7 +572,6 @@ void play_encrypted_song(std::string song_name) {
 
 	std::cout << "Waiting for metadata to process" << std::endl;
 	while (c->drm_state == WAITING_METADATA) {
-		//std::cout << "???????" << std::endl;
 		continue;
 	}
 	std::cout << "Metadata Processed!" << std::endl;
