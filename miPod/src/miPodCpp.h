@@ -41,8 +41,8 @@
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + NONCE_SIZE + MAC_SIZE
 #define ENC_METADATA_SZ METADATA_SZ + NONCE_SIZE + MAC_SIZE
 #define META_DATA_ALLOC 4
-#define SONG_CHUNK_SZ 32000
-#define ENC_BUFFER_SZ 30
+#define SONG_CHUNK_SZ 16000
+#define ENC_BUFFER_SZ 60
 
 // structs to import secrets.h JSON data into memory
 typedef struct {
@@ -67,8 +67,8 @@ typedef struct {
 
 // struct to interpret shared buffer as a query
 typedef struct {
-    int num_regions;
-    int num_users;
+	uint32_t num_regions;
+	uint32_t num_users;
     char owner[USERNAME_SZ];
     char regions[MAX_REGIONS * REGION_NAME_SZ];
     char users[MAX_USERS * USERNAME_SZ];
@@ -92,7 +92,7 @@ typedef struct __attribute__((__packed__)) {
 // packing values skip over non-relevant WAV metadata
 typedef struct __attribute__((__packed__)) {
     char packing1[4];
-    int file_size;
+    uint32_t file_size;
     char packing2[32];
     int wav_size;
     drm_md md;
@@ -109,7 +109,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 typedef struct __attribute__ ((__packed__)) {
 	unsigned char wav_header[WAVE_HEADER_SZ];
-	unsigned int metadata_size;
+	uint32_t metadata_size;
 } waveHeaderStruct;
 
 typedef struct __attribute__ ((__packed__)) {
@@ -141,8 +141,8 @@ typedef struct __attribute__ ((__packed__)) {
 
 // TODO: Remove deprecated commands
 // shared buffer values
-enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
-enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
+enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, WAIT_FOR_CHUNK, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
+enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_FILE_HEADER, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
 
 
 // struct to interpret shared command channel
@@ -153,17 +153,22 @@ typedef volatile struct __attribute__((__packed__)) {
     char padding;               // not used
     char username[USERNAME_SZ]; // stores logged in or attempted username
     char pin[MAX_PIN_SZ];       // stores logged in or attempted pin
-    int metadata_size;
-    int total_chunks;
-    int chunk_size;
-    int chunk_nums;
-    int chunk_remainder;
-    unsigned int buffer_offset;
+    uint32_t metadata_size;
+    uint32_t total_chunks;
+    uint32_t chunk_size;
+    uint32_t chunk_nums;
+    uint32_t chunk_remainder;
+    uint32_t buffer_offset;
+    unsigned char wav_header[WAVE_HEADER_SZ];
+    unsigned char songBuffer[ENC_BUFFER_SZ * SONG_CHUNK_SZ];
 
     // shared buffer is either a drm song or a query
     union {
+    	// Non-encrypted
         songStruct song;
         queryStruct query;
+
+        // Encrypted
         encryptedWaveheader encWaveHeader;
         encryptedMetadata encMetadata;
         encryptedSongChunk encSongChunk;

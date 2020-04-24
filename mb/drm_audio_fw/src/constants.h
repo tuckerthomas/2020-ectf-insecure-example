@@ -39,8 +39,8 @@
 #define META_DATA_ALLOC 4
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
-#define SONG_CHUNK_SZ 32000
-#define ENC_BUFFER_SZ 30
+#define SONG_CHUNK_SZ 16000
+#define ENC_BUFFER_SZ 60
 #define ENC_CHUNK_SZ SONG_CHUNK_SZ + MAC_SIZE
 
 // structs to import secrets.h JSON data into memory
@@ -74,8 +74,8 @@ struct color {
 
 // struct to interpret shared buffer as a query
 typedef struct {
-    int num_regions;
-    int num_users;
+    u32 num_regions;
+    u32 num_users;
     char owner[USERNAME_SZ];
     char regions[MAX_REGIONS * REGION_NAME_SZ];
     char users[MAX_USERS * USERNAME_SZ];
@@ -88,10 +88,10 @@ typedef struct {
 
 // struct to interpret drm metadata
 typedef struct __attribute__((__packed__)) {
-    char md_size;
-    char owner_id;
-    char num_regions;
-    char num_users;
+    u8 md_size;
+    u8 owner_id;
+    u8 num_regions;
+    u8 num_users;
     char buf[];
 } drm_md;
 
@@ -156,9 +156,8 @@ typedef struct __attribute__ ((__packed__)) {
 
 // TODO: remove deprecated commands
 // shared buffer values
-enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
-enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
-
+enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, WAIT_FOR_CHUNK, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
+enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_FILE_HEADER, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
 enum play_states {DECRYPT, DECRYPT_TEMP, COPY, COPY_TEMP, REQUEST};
 
 
@@ -176,15 +175,21 @@ typedef volatile struct __attribute__((__packed__)) {
     u32 chunk_nums;
     u32 chunk_remainder;
     u32 buffer_offset;
+    waveHeaderStruct wave_header;
+    unsigned char songBuffer[ENC_BUFFER_SZ * SONG_CHUNK_SZ];
 
     // shared buffer is either a drm song or a query
     union {
-        song song;
+        // Non-encrypted
+    	song song;
         query query;
+
+        // Encrypted
         encryptedWaveheader encWaveHeaderMeta;
         encryptedMetadata encMetadata;
         encryptedSongChunk encSongChunk;
         encryptedSongChunk encSongBuffer[ENC_BUFFER_SZ];
+
         char buf[MAX_SONG_SZ]; // sets correct size of cmd_channel for allocation
     };
 } cmd_channel;
@@ -209,6 +214,7 @@ typedef struct {
     char pin[MAX_PIN_SZ];       // logged on pin
     song_md song_md;            // current song metadata
     purdue_md purdue_md;
+    u32 total_bytes_to_play;	// Total number of bytes in a song
     char drm_state;				// drm state
     u8 buffer_offset;
     char play_state;			// Keeps track of the playing state

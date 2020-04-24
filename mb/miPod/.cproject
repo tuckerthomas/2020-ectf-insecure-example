@@ -35,7 +35,7 @@
 								<option id="xilinx.gnu.compiler.dircategory.includes.1459519983" name="Include Paths" superClass="xilinx.gnu.compiler.dircategory.includes" valueType="includePath">
 									<listOptionValue builtIn="false" value="/usr/arm-linux-gnueabihf/include"/>
 								</option>
-								<option id="xilinx.gnu.compiler.misc.other.356716395" name="Other flags" superClass="xilinx.gnu.compiler.misc.other" value="-c -fmessage-length=0 -MT&quot;$@&quot; -lssl -lcrypto" valueType="string"/>
+								<option id="xilinx.gnu.compiler.misc.other.356716395" name="Other flags" superClass="xilinx.gnu.compiler.misc.other" value="-c -fmessage-length=0 -MT&quot;$@&quot;" valueType="string"/>
 								<inputType id="xilinx.gnu.armv7.linux.cxx.compiler.input.1577333927" name="C++ source files" superClass="xilinx.gnu.armv7.linux.cxx.compiler.input"/>
 							</tool>
 							<tool id="xilinx.gnu.armv7.linux.toolchain.archiver.1614155813" name="ARM v7 Linux archiver" superClass="xilinx.gnu.armv7.linux.toolchain.archiver"/>
@@ -281,8 +281,14 @@
 		<scannerConfigBuildInfo instanceId="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.602439937;ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.602439937.;ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.1584449919;ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.input.1592613328">
 			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
 		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.986384151;ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.986384151.;xilinx.gnu.armv7.linux.cxx.toolchain.compiler.207933843;xilinx.gnu.armv7.linux.cxx.compiler.input.1577333927">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.xilinx.managedbuilder.ui.ARMA53X32LinuxGCCManagedMakePerProjectProfileC"/>
+		</scannerConfigBuildInfo>
 		<scannerConfigBuildInfo instanceId="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.602439937;ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.602439937.;ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.545678840;ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.input.469032012">
 			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.986384151;ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.986384151.">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.xilinx.managedbuilder.ui.ARMA53X32LinuxGCCManagedMakePerProjectProfileC"/>
 		</scannerConfigBuildInfo>
 	</storageModule>
 </cproject>
