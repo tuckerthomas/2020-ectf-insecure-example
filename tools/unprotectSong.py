@@ -48,7 +48,6 @@ def decrypt_song(keys_loc, infile, outfile):
     keys_file = load(open(keys_loc, "r"))
 
     print("key " + keys_file["key"])
-    print("iv " + keys_file["iv"])
 
     #key to decrypt the encrypted song file
     key = bytes.fromhex(keys_file["key"])
