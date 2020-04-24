@@ -78,27 +78,6 @@ typedef struct {
 #define q_region_lookup(q, i) (q.regions + (i * REGION_NAME_SZ))
 #define q_user_lookup(q, i) (q.users + (i * USERNAME_SZ))
 
-
-// struct to interpret drm metadata
-typedef struct __attribute__((__packed__)) {
-    uint8_t md_size;
-    uint8_t owner_id;
-    uint8_t num_regions;
-    uint8_t num_users;
-    char buf[];
-} drm_md;
-
-// struct to interpret shared buffer as a drm song file
-// packing values skip over non-relevant WAV metadata
-typedef struct __attribute__((__packed__)) {
-    char packing1[4];
-    uint32_t file_size;
-    char packing2[32];
-    int wav_size;
-    drm_md md;
-} songStruct;
-
-// Size should be 263 bytes
 typedef struct __attribute__ ((__packed__)) {
     uint32_t owner_id;
     uint8_t num_regions;
@@ -150,22 +129,21 @@ typedef volatile struct __attribute__((__packed__)) {
     char cmd;                   // from commands enum
     char drm_state;             // from states enum
     char login_status;          // 0 = logged off, 1 = logged on
-    char padding;               // not used
     char username[USERNAME_SZ]; // stores logged in or attempted username
     char pin[MAX_PIN_SZ];       // stores logged in or attempted pin
-    uint32_t metadata_size;
-    uint32_t total_chunks;
-    uint32_t chunk_size;
+    uint8_t share_rejected;		// tells mipod if the share was rejected or not
+    uint32_t metadata_size;		// stores size of the metadata
+    uint32_t total_chunks;		// stores the total chunks to be decrypted
+    uint32_t chunk_size;		// stores dynamic chunk size
     uint32_t chunk_nums;
     uint32_t chunk_remainder;
-    uint32_t buffer_offset;
+    uint32_t buffer_offset;		// Determines if reading/writing to buffer
     unsigned char wav_header[WAVE_HEADER_SZ];
     unsigned char songBuffer[ENC_BUFFER_SZ * SONG_CHUNK_SZ];
 
     // shared buffer is either a drm song or a query
     union {
     	// Non-encrypted
-        songStruct song;
         queryStruct query;
 
         // Encrypted

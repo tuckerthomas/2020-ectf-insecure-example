@@ -153,17 +153,6 @@ int username_to_uid(char *username, u32 *uid, int provisioned_only) {
     return FALSE;
 }
 
-
-// loads the song metadata in the shared buffer into the local struct
-void load_song_md() {
-    s.song_md.md_size = c->song.md.md_size;
-    s.song_md.owner_id = c->song.md.owner_id;
-    s.song_md.num_regions = c->song.md.num_regions;
-    s.song_md.num_users = c->song.md.num_users;
-    memcpy(s.song_md.rids, (void *)get_drm_rids(c->song), s.song_md.num_regions);
-    memcpy(s.song_md.uids, (void *)get_drm_uids(c->song), s.song_md.num_users);
-}
-
 // checks if the song loaded into the shared buffer is locked for the current user
 int is_locked() {
     int locked = TRUE;
@@ -516,27 +505,27 @@ void share_enc_song(unsigned char *key) {
     // Check if a user is logged in
     if (!s.logged_in) {
         mb_printf("No user is logged in. Cannot share song\r\n");
-        c->song.wav_size = 0;
-        return;
+        c->share_rejected = 0;
+		return;
     // Check if the user that is logged in is the owner of the song
     } else if (s.uid != s.purdue_md.owner_id) {
         mb_printf("User '%s' is not song's owner. Cannot share song\r\n", s.username);
-        c->song.wav_size = 0;
+        c->share_rejected = 0;
         return;
     // Check if the username is a valid user
     } else if (!username_to_uid((char *)c->username, &uid, TRUE)) {
         mb_printf("Username not found\r\n");
-        c->song.wav_size = 0;
+        c->share_rejected = 0;
         return;
     // Check if they own the song
     } else if(uid == s.purdue_md.owner_id){
         mb_printf("User is owner\r\n");
-        c->song.wav_size = 0;
+        c->share_rejected = 0;
 		return;
 	// Check if the song has already been shared to the max amount of users
 	} else if(s.purdue_md.num_users == MAX_USERS) {
 		mb_printf("User has already shared this song to the max amount of users\r\n");
-		c->song.wav_size = 0;
+		c->share_rejected = 0;
 		return;
 	}
 
@@ -544,7 +533,7 @@ void share_enc_song(unsigned char *key) {
 	for(int i = 0; i < s.purdue_md.num_users; i++){
 		if(uid == s.purdue_md.provisioned_users[i]){
        		mb_printf("User is already shared\r\n");
-       		c->song.wav_size = 0;
+       		c->share_rejected = 0;
 			return;
 		}
 	}

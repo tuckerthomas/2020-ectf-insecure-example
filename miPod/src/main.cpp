@@ -264,7 +264,7 @@ void query_player() {
     std::string buffer((char *) q_region_lookup(c->query, 0));
     std::cout << "Regions: " << buffer;
 
-    for (int i = 1; i < c->query.num_regions; i++) {
+    for (unsigned int i = 1; i < c->query.num_regions; i++) {
     	buffer = std::string((char *) q_region_lookup(c->query, i));
         std::cout << ", " << buffer;
     }
@@ -274,7 +274,7 @@ void query_player() {
     if (c->query.num_users) {
         buffer = std::string((char *)q_user_lookup(c->query, 0));
         std::cout << buffer;
-        for (int i = 1; i < c->query.num_users; i++) {
+        for (unsigned int i = 1; i < c->query.num_users; i++) {
         	buffer = std::string((char *)q_user_lookup(c->query, i));
             std::cout << ", " << buffer;
         }
@@ -320,7 +320,7 @@ void query_enc_song(std::string song_name) {
 
 	std::string buffer((char *)q_region_lookup(c->query, 0));
 	std::cout << "Regions: " << buffer;
-	for (int i = 1; i < c->query.num_regions; i++) {
+	for (unsigned int i = 1; i < c->query.num_regions; i++) {
 		buffer = std::string((char *)q_region_lookup(c->query, i));
 		std::cout << ", " << buffer;
 	}
@@ -333,7 +333,7 @@ void query_enc_song(std::string song_name) {
 	if (c->query.num_users) {
 		buffer = std::string((char *)q_user_lookup(c->query, 0));
 		std::cout << buffer;
-		for (int i = 1; i < c->query.num_users; i++) {
+		for (unsigned int i = 1; i < c->query.num_users; i++) {
 			buffer = std::string((char *)q_user_lookup(c->query, i));
 			std::cout << ", " << buffer;
 		}
@@ -496,10 +496,6 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	// Read the encrypted metadata into the buffer
 	fread(encryptedMetadataBuffer, ENC_METADATA_SZ, 1, fd);
 
-	//fclose(fd);
-
-	//fd = NULL;
-
 	// Copy the local buffer to the command buffer
 	memcpy((encryptedMetadata *)&c->encMetadata, encryptedMetadataBuffer, ENC_METADATA_SZ);
 
@@ -517,8 +513,7 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	while (c->drm_state == WORKING) continue; // wait for DRM to start working
 
 	// request was rejected if WAV length is 0
-	length = c->song.wav_size;
-	if (length == 0) {
+	if (c->share_rejected == 0) {
 		std::cerr << "Share rejected\r\n";
 		return;
 	}
@@ -677,8 +672,7 @@ int main(int argc, char** argv) {
 
 	// open command channel
 	mem = open("/dev/uio0", O_RDWR);
-	c = (cmd_channel*) mmap(NULL, sizeof(cmd_channel), PROT_READ | PROT_WRITE,
-			MAP_SHARED, mem, 0);
+	c = (cmd_channel*) mmap(NULL, sizeof(cmd_channel), PROT_READ | PROT_WRITE, MAP_SHARED, mem, 0);
 	if (c == MAP_FAILED) {
 		std::cerr << "MMAP Failed! Error = " << (errno);
 		return -1;
