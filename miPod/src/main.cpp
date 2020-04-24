@@ -28,10 +28,15 @@ volatile cmd_channel *c;
 
 //////////////////////// UTILITY FUNCTIONS ////////////////////////
 
+template<typename ...Args>
+void mp_print(Args && ...args) {
+	(std::cout << "mP> " << ... << args);
+}
+
 // sends a command to the microblaze using the shared command channel and interrupt
 void send_command(int cmd) {
 	if (memcpy((void*) &c->cmd, &cmd, 1) == NULL) {
-		std::cout << "Could not copy memory: " << (errno) << std::endl;
+		mp_print("Could not copy memory: ", (errno), "\r\n");
 	}
 
 	//trigger gpio interrupt
@@ -53,8 +58,7 @@ void parse_input(std::string input, std::string& cmd, std::string& arg1,
 		if (i < 3) {
 			ssin >> inputs[i++];
 		} else {
-			std::cerr << "More than 3 parameters supplied" << (errno)
-					<< std::endl;
+			mp_print("More than 3 parameters supplied", (errno), "\r\n");
 			return;
 		}
 	}
@@ -67,26 +71,26 @@ void parse_input(std::string input, std::string& cmd, std::string& arg1,
 
 // prints the help message while not in playback
 void print_help() {
-	std::cout << "miPod options:\r\n";
-	std::cout << "  login<username> <pin>: log on to a miPod account (must be logged out)\r\n";
-	std::cout << "  logout: log off a miPod account (must be logged in)\r\n";
-	std::cout << "  query <song.drm>: display information about the song\r\n";
-	std::cout << "  share <song.drm>: <username>: share the song with the specified user\r\n";
-	std::cout << "  play <song.drm>: play the song\r\n";
-	std::cout << "  exit: exit miPod\r\n";
-	std::cout << "  help: display this message\r\n";
+	mp_print("miPod options:\r\n",
+			"  login<username> <pin>: log on to a miPod account (must be logged out)\r\n",
+			"  logout: log off a miPod account (must be logged in)\r\n",
+			"  query <song.drm>: display information about the song\r\n",
+			"  share <song.drm>: <username>: share the song with the specified user\r\n",
+			"  play <song.drm>: play the song\r\n",
+			"  exit: exit miPod\r\n",
+			"  help display this message\r\n");
 }
 
 // prints the help message while in playback
 void print_playback_help() {
-	std::cout << "miPod playback options:\r\n";
-	std::cout << "  stop: stop playing the song\r\n";
-	std::cout << "  pause: pause the song\r\n";
-	std::cout << "  resume: resume the paused song\r\n";
-	std::cout << "  restart: restart the song\r\n";
-	std::cout << "  ff: fast forwards 5 seconds(unsupported)\r\n";
-	std::cout << "  rw: rewind 5 seconds (unsupported)\r\n";
-	std::cout << "  help: display this message\r\n";
+	mp_printf("miPod playback options:\r\n",
+			"  stop: stop playing the song\r\n",
+			"  pause: pause the song\r\n",
+			"  resume: resume the paused song\r\n",
+			"  restart: restart the song\r\n",
+			"  ff: fast forwards 5 seconds(unsupported)\r\n",
+			"  rw: rewind 5 seconds (unsupported)\r\n",
+			"  help: display this message\r\n");
 }
 
 FILE *read_enc_file_header(std::string fname) {
@@ -95,7 +99,7 @@ FILE *read_enc_file_header(std::string fname) {
 	fd = fopen(fname.c_str(), "rb");
 
 	if (fd == NULL) {
-		std::cout << "Could not open file! Error = " << (errno) << std::endl;
+		mp_print("Could not open file! Error = ", (errno), "\r\n");
 		return NULL;
 	}
 
@@ -111,7 +115,7 @@ FILE *read_enc_file_header(std::string fname) {
 
 void read_enc_metadata(FILE *fp, int metadata_size) {
 	if (fp == NULL) {
-		std::cout << "File error" << std::endl;
+		mp_print("File error\r\n");
 		return;
 	}
 
@@ -140,7 +144,7 @@ void read_enc_chunk(FILE *fp, int chunk_size, int buffer_loc) {
 }
 
 void *decryption_thread(void *song_name) {
-	std::cout << "Starting decryption thread!" << std::endl;
+	mp_print("Starting decryption thread!\r\n");
 
 	// handle restart
 	do {
@@ -155,12 +159,12 @@ void *decryption_thread(void *song_name) {
 
 		if (c->drm_state == WAITING_FILE_HEADER) {
 			// load file into shared buffer
-			std::cout << "Opening " << (char *) song_name << std::endl;
+			mp_print("Opening ", (char *) song_name, "\r\n");
 			fp = read_enc_file_header((char *) song_name);
 		}
 
 		if (fp == NULL) {
-			std::cout << "Could not open " << (char *) song_name << std::endl;
+			mp_print("Could not open file\r\n");
 			return (void *) -1;
 		}
 
@@ -205,21 +209,21 @@ void *decryption_thread(void *song_name) {
 				usleep(500);
 			}
 
+			// Song playback stopped
 			if (c->drm_state == STOPPED) {
-				std::cout << "Song playback stopped" << std::endl;
 				fclose(fp);
 				break;
 			}
 
+			// Restarting playback
 			if (c->drm_state == WAITING_FILE_HEADER) {
-				std::cout << "Restarting playback" << std::endl;
 				fclose(fp);
 				break;
 			}
 		}
 	} while (c->drm_state != STOPPED);
 
-	std::cout << "Leaving decryption thread!" << std::endl;
+	mp_print("Leaving decryption thread!\r\n");
 
 	return (void *) 0;
 }
@@ -228,10 +232,10 @@ void *decryption_thread(void *song_name) {
 
 void login(std::string& username, std::string& pin) {
 	//TODO change pin.size() check to the password specified by the rules (5)
-	std::cout << "Checking username: '" << username << "' pin: '" << pin << "'" << std::endl;
+
 	if (username.size() == 0 || pin.size() == 0 || username.size() > USERNAME_SZ
 			|| pin.size() > MAX_PIN_SZ) {
-		std::cout << "Invalid user name/PIN\r\n";
+		mp_print("Invalid user name/PIN\r\n");
 		print_help();
 		return;
 	}
@@ -239,13 +243,12 @@ void login(std::string& username, std::string& pin) {
 			"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890_")
 			!= std::string::npos
 			|| pin.find_first_not_of(
-					"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890_")
+					"01234567890")
 					!= std::string::npos) {
-		std::cerr << "Error username/pin not valid\n";
+		mp_print("Error username/pin not valid\r\n");
 		return;
 	}
 
-	//instead of strcpy use '=' operator
 	strncpy((char *) c->username, username.c_str(), USERNAME_SZ);
 	strncpy((char *) c->pin, pin.c_str(), MAX_PIN_SZ);
 
@@ -270,15 +273,15 @@ void query_player() {
 
     // print query results
     std::string buffer((char *) q_region_lookup(c->query, 0));
-    std::cout << "Regions: " << buffer;
+    mp_print( "Regions: " , buffer);
 
     for (unsigned int i = 1; i < c->query.num_regions; i++) {
     	buffer = std::string((char *) q_region_lookup(c->query, i));
-        std::cout << ", " << buffer;
+    	std::cout << ", " << buffer;
     }
-    std::cout << std::endl;
+    std::cout << "\r\n";
 
-    std::cout << "Authorized users: ";
+    mp_print( "Authorized users: ");
     if (c->query.num_users) {
         buffer = std::string((char *)q_user_lookup(c->query, 0));
         std::cout << buffer;
@@ -287,7 +290,7 @@ void query_player() {
             std::cout << ", " << buffer;
         }
     }
-    std::cout << std::endl;
+    std::cout << "\r\n";
 }
 
 void query_enc_song(std::string song_name) {
@@ -299,7 +302,7 @@ void query_enc_song(std::string song_name) {
 	fd = fopen(song_name.c_str(), "rb");
 
 	if (fd == NULL) {
-		std::cerr << "Could not open " << song_name << " to share:" << (errno) << std::endl;
+		mp_print("Could not open " , song_name , " to share:" , (errno) , "\r\n");
 		return;
 	}
 
@@ -321,22 +324,22 @@ void query_enc_song(std::string song_name) {
 	}
 
 	// print query results
-	std::cout << "Owner: " << c->query.owner << std::endl;
+	mp_print( "Owner: " , (unsigned char *) c->query.owner , "\r\n");
 
 	std::string buffer((char *)q_region_lookup(c->query, 0));
 
-	std::cout << "Regions: " << buffer;
+	mp_print( "Regions: " , buffer);
 
 	for (unsigned int i = 1; i < c->query.num_regions; i++) {
 		buffer = std::string((char *)q_region_lookup(c->query, i));
 		std::cout << ", " << buffer;
 	}
-	std::cout << std::endl;
+	mp_print( "\r\n");
 
 	buffer = std::string((char *)c->query.owner);
-	std::cout << "Owner: " << buffer << std::endl;
+	mp_print( "Owner: " , buffer , "\r\n");
 
-	std::cout << "Authorized users: ";
+	mp_print( "Authorized users: ");
 	if (c->query.num_users) {
 		buffer = std::string((char *)q_user_lookup(c->query, 0));
 		std::cout << buffer;
@@ -345,7 +348,7 @@ void query_enc_song(std::string song_name) {
 			std::cout << ", " << buffer;
 		}
 	}
-	std::cout << std::endl;
+	mp_print( "\r\n");
 }
 
 // turns DRM song into original WAV for digital output
@@ -361,13 +364,13 @@ void digital_out(std::string song_name) {
 	std::string song_name_dout = song_name;
 	song_name_dout.append(".dout");
 
-	std::cout << "Saving to " << song_name_dout << std::endl;
+	mp_print( "Saving to " , song_name_dout , "\r\n");
 
 	// Open pointer for digital out file
 	FILE *wfp = fopen(song_name_dout.c_str(), "wb");
 
 	if (wfp == NULL) {
-		std::cout << "Could not open file! Error = " << (errno) << std::endl;
+		mp_print( "Could not open file! Error = " , (errno) , "\r\n");
 		return;
 	}
 
@@ -380,7 +383,7 @@ void digital_out(std::string song_name) {
 	}
 
 	if (rfp == NULL) {
-		std::cout << "Could not read file" << std::endl;
+		mp_print( "Could not read file" , "\r\n");
 		return;
 	}
 
@@ -394,7 +397,7 @@ void digital_out(std::string song_name) {
 
 		int metadata_size = c->metadata_size;
 		read_enc_metadata(rfp, metadata_size);
-		std::cout << "Metadata read!" << std::endl;
+		mp_print( "Metadata read!" , "\r\n");
 	}
 
 	while (c->drm_state == WAITING_METADATA) {
@@ -447,7 +450,7 @@ void digital_out(std::string song_name) {
 				int buffer_loc = i + ((ENC_BUFFER_SZ / 2) * !c->buffer_offset);
 
 				if (i == last_chunks - 1) {
-					std::cout << "Writing last chunk!" << std::endl;
+					mp_print( "Writing last chunk!" , "\r\n");
 					fwrite((unsigned char *) &c->songBuffer[SONG_CHUNK_SZ * buffer_loc], c->chunk_remainder, 1, wfp);
 				} else {
 					fwrite((unsigned char *) &c->songBuffer[SONG_CHUNK_SZ * buffer_loc], SONG_CHUNK_SZ, 1, wfp);
@@ -459,7 +462,7 @@ void digital_out(std::string song_name) {
 		}
 	}
 
-	std::cout << "Song dump finished" << std::endl;
+	mp_print( "Song dump finished" , "\r\n");
 
 	fclose(wfp);
 	fclose(rfp);
@@ -469,11 +472,11 @@ void digital_out(std::string song_name) {
 
 // attempts to share a song with a user
 void share_enc_song(std::string& song_name, std::string& username) {
-	std::cout << "Attempting to share " << song_name << " with " << username << std::endl;
+	mp_print( "Attempting to share " , song_name , " with " , username , "\r\n");
 	FILE *fd;
 
 	if (username.empty()) {
-		std::cout << "Need song name and username\r\n";
+		mp_print( "Need song name and username\r\n");
 		print_help();
 		return;
 	}
@@ -485,7 +488,7 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	fd = fopen(song_name.c_str(), "rb");
 
 	if (fd == NULL) {
-		std::cerr << "Could not open " << song_name << " to share:" << (errno) << std::endl;
+		mp_print("Could not open " , song_name , " to share:" , (errno) , "\r\n");
 		return;
 	}
 
@@ -499,7 +502,7 @@ void share_enc_song(std::string& song_name, std::string& username) {
 
 	// Check username argument
 	if (username.empty()) {
-		std::cout << "Need song name and username\r\n";
+		mp_print( "Need song name and username\r\n");
 		print_help();
 	}
 
@@ -512,7 +515,7 @@ void share_enc_song(std::string& song_name, std::string& username) {
 
 	// Check if the share was rejected
 	if (c->share_rejected == 1) {
-		std::cerr << "Share rejected\r\n";
+		mp_print("Share rejected\r\n");
 		return;
 	}
 
@@ -529,7 +532,7 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	fd2 = fopen(temp_song_name.c_str(), "wb");
 
 	if (fd2 == NULL) {
-		std::cerr << "Failed to open file! Error = " << (errno) << "\r\n";
+		mp_print("Failed to open file! Error = " , (errno) , "\r\n");
 		return;
 	}
 
@@ -551,9 +554,9 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	static unsigned char song_buffer[MAX_SONG_SZ];
 
 	int byte_to_read = endFileSZ - (ENC_WAVE_HEADER_SZ + META_DATA_ALLOC + ENC_METADATA_SZ);
-	std::cout << "Size of song_buffer: " << sizeof(song_buffer) << std::endl;
-	std::cout << "file size: " << endFileSZ << std::endl;
-	std::cout << "Bytes to read: " << byte_to_read << std::endl;
+	mp_print( "Size of song_buffer: " , sizeof(song_buffer) , "\r\n");
+	mp_print( "file size: " , endFileSZ , "\r\n");
+	mp_print( "Bytes to read: " , byte_to_read , "\r\n");
  	fread(song_buffer, byte_to_read, 1, fd);
 	fwrite(song_buffer, byte_to_read, 1, fd2);
 
@@ -562,22 +565,22 @@ void share_enc_song(std::string& song_name, std::string& username) {
 
 	// Delete old song file and rename new
 	if ( remove( song_name.c_str() ) != 0 ){
-		std::cerr << "Failed to remove file! Error = " << (errno) << "\r\n";
+		mp_print("Failed to remove file! Error = " , (errno) , "\r\n");
 		return;
 	}
 
 	if ( rename( temp_song_name.c_str() , song_name.c_str() ) != 0 ){
-		std::cerr << "Failed to rename file! Error = " << (errno) << "\r\n";
+		mp_print("Failed to rename file! Error = " , (errno) , "\r\n");
 		return;
 	}
 
-	std::cout << "Finished writing file\r\n";
+	mp_print( "Finished writing file\r\n");
 	return;
 }
 
 void play_encrypted_song(std::string song_name) {
 
-	std::cout << "Playing Encrypted Song" << std::endl;
+	mp_print( "Playing Encrypted Song" , "\r\n");
 
 	//char usr_cmd[USR_CMD_SZ + 1], *cmd = NULL, *arg1 = NULL, *arg2 = NULL;
 	std::string usr_cmd = "";
@@ -598,7 +601,7 @@ void play_encrypted_song(std::string song_name) {
 
 			// exit playback loop if DRM has finished song
 			if (c->drm_state == STOPPED) {
-				std::cout << "Song finished\r\n";
+				mp_print( "Song finished\r\n");
 
 				pthread_join(dthread, NULL);
 
@@ -625,24 +628,21 @@ void play_encrypted_song(std::string song_name) {
 			} else if (cmd == "restart") {
 				send_command(RESTART);
 			} else if (cmd == "exit") {
-				std::cout << "Exiting...\r\n";
+				mp_print( "Exiting...\r\n");
 				send_command(STOP);
 				return;
 			} else if (cmd == "rw") {
-				mp_printf("Unsupported feature.\r\n\r\n");
+				mp_printf("Unsupported feature.r\n");
 				print_playback_help();
 			} else if (cmd == "ff") {
-				std::cout << "Unsupported feature.\r\n\r\n";
-				print_playback_help();
-			} else if (cmd == "lyrics") {
-				std::cout << "Unsupported feature.\r\n\r\n";
+				mp_print( "Unsupported feature.r\n");
 				print_playback_help();
 			} else {
-				std::cout << "Unrecognized command." << std::endl;
+				mp_print( "Unrecognized command." , "\r\n");
 				print_playback_help();
 			}
 		} else {
-			std::cout << "Please enter a command." << std::endl;
+			mp_print( "Please enter a command." , "\r\n");
 			print_playback_help();
 		}
 
@@ -661,14 +661,12 @@ int main(int argc, char** argv) {
 	std::string arg1 = "";
 	std::string arg2 = "";
 
-	// Check cmd_channel size
-	std::cout << "CMD_CHANNEL SIZE: " << sizeof(cmd_channel) << std::endl;
 
 	// open command channel
 	mem = open("/dev/uio0", O_RDWR);
 	c = (cmd_channel*) mmap(NULL, sizeof(cmd_channel), PROT_READ | PROT_WRITE, MAP_SHARED, mem, 0);
 	if (c == MAP_FAILED) {
-		std::cerr << "MMAP Failed! Error = " << (errno);
+		mp_print("MMAP Failed! Error = " , (errno));
 		return -1;
 	}
 
@@ -679,7 +677,6 @@ int main(int argc, char** argv) {
 	while (1) {
 		// get command
 		print_prompt();
-		//fgets(usr_cmd, USR_CMD_SZ, stdin);
 		std::getline(std::cin, usr_cmd);
 
 		// parse and handle command
@@ -701,14 +698,14 @@ int main(int argc, char** argv) {
 			} else if (cmd == "play") {
 				play_encrypted_song(arg1);
 			} else if (cmd == "exit") {
-				std::cout << "Exiting..." << std::endl;
+				mp_print( "Exiting..." , "\r\n");
 				break;
 			} else {
-				std::cout << "Unrecognized command." << std::endl;
+				mp_print( "Unrecognized command." , "\r\n");
 				print_help();
 			}
 		} else {
-			std::cout << "Please enter a command." << std::endl;
+			mp_print( "Please enter a command." , "\r\n");
 			print_help();
 		}
 	}
