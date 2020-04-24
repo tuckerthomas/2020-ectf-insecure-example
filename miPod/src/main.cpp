@@ -113,6 +113,7 @@ FILE *read_enc_file_header(std::string fname) {
 
 }
 
+//Reads song metadata chunk by chunk and stores it in the file stream
 void read_enc_metadata(FILE *fp, int metadata_size) {
 	if (fp == NULL) {
 		mp_print("File error\r\n");
@@ -131,6 +132,7 @@ void read_enc_metadata(FILE *fp, int metadata_size) {
 	return;
 }
 
+//Reads encrypted song chunk
 void read_enc_chunk(FILE *fp, int chunk_size, int buffer_loc) {
 	int chunk_total_size = NONCE_SIZE + MAC_SIZE + chunk_size;
 
@@ -143,6 +145,7 @@ void read_enc_chunk(FILE *fp, int chunk_size, int buffer_loc) {
 	return;
 }
 
+//New thread for requesting and decrypting chunks
 void *decryption_thread(void *song_name) {
 	mp_print("Starting decryption thread!\r\n");
 
@@ -230,6 +233,7 @@ void *decryption_thread(void *song_name) {
 
 //////////////////////// COMMAND FUNCTIONS ////////////////////////
 
+//Allows for a user to login to microblaze with username and pin
 void login(std::string& username, std::string& pin) {
 	//TODO change pin.size() check to the password specified by the rules (5)
 
@@ -257,7 +261,7 @@ void login(std::string& username, std::string& pin) {
     while (c->drm_state == WORKING) continue; // wait for DRM to dump file
 }
 
-// logs out for a user
+// logsout the current logged in user
 void logout() {
 	// drive DRM
 	send_command(LOGOUT);
@@ -293,6 +297,7 @@ void query_player() {
     std::cout << "\r\n";
 }
 
+//Queries metadata of encrypted song and prints information from metadata
 void query_enc_song(std::string song_name) {
 	FILE *fd;
 
@@ -578,6 +583,7 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	return;
 }
 
+//Outputs the audio content of the encrypted song
 void play_encrypted_song(std::string song_name) {
 
 	mp_print( "Playing Encrypted Song" , "\r\n");
