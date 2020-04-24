@@ -33,9 +33,11 @@
 #define HASHPIN_SZ 65
 #define SALT_SZ 7
 
+#define SHA_256_SUM_SZ 32
+
 #define NONCE_SIZE 12
 #define WAVE_HEADER_SZ 44
-#define METADATA_SZ 390
+#define METADATA_SZ 390 + SHA_256_SUM_SZ
 #define META_DATA_ALLOC 4
 #define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
 #define MAC_SIZE 16
@@ -87,6 +89,7 @@ typedef struct {
 
 // Size should be 100 bytes
 typedef struct __attribute__ ((__packed__)) {
+	unsigned char sha256sum[SHA_256_SUM_SZ];
     u32 owner_id;
     u8 num_regions;
     u8 num_users;
