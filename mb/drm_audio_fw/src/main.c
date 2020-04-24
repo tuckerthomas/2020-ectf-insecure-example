@@ -746,14 +746,15 @@ void play_encrypted_song(unsigned char *key) {
 
 			// First time run
 			if (chunks_decrypted == 0) {
-				// Check to see if logged in user
-				if (s.logged_in && s.uid == s.purdue_md.owner_id) {
-					song_playable = TRUE;
-				}
-
 				// Check if any of the song's regions match the player's regions
 				for (int i = 0; i < s.purdue_md.num_regions; i++) {
 					if (is_provisioned_rid(s.purdue_md.provisioned_regions[i])) {
+						// Check to see if logged in user owns the song
+						if (s.logged_in && s.uid == s.purdue_md.owner_id) {
+							song_playable = TRUE;
+						}
+
+						// If the song can be played in the region, check if the logged in user has the song shared to them
 						for (int n = 0; n < s.purdue_md.num_users; n++) {
 							if (s.uid == s.purdue_md.provisioned_users[n]) {
 								song_playable = TRUE;
