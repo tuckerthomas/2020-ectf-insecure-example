@@ -334,7 +334,7 @@ void query_enc_song(std::string song_name) {
 		buffer = std::string((char *)q_region_lookup(c->query, i));
 		std::cout << ", " << buffer;
 	}
-	mp_print( "\r\n");
+	std::cout << "\r\n";
 
 	buffer = std::string((char *)c->query.owner);
 	mp_print( "Owner: " , buffer , "\r\n");
@@ -348,7 +348,7 @@ void query_enc_song(std::string song_name) {
 			std::cout << ", " << buffer;
 		}
 	}
-	mp_print( "\r\n");
+	std::cout << "\r\n";
 }
 
 // turns DRM song into original WAV for digital output

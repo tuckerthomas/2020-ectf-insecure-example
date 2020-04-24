@@ -70,7 +70,7 @@ void myISR(void) {
 //////////////////////// UTILITY FUNCTIONS ////////////////////////
 
 // returns whether an rid has been provisioned
-int is_provisioned_rid(char rid) {
+int is_provisioned_rid(u32 rid) {
     for (int i = 0; i < NUM_PROVISIONED_REGIONS; i++) {
         if (rid == provisioned_rid[i].provisioned_regionID) {
             return TRUE;
@@ -668,8 +668,8 @@ void play_encrypted_song(unsigned char *key) {
 	int chunk_remainder;
 
 	// Boolean for 30s buffer
-	int song_owned = FALSE;
-	int song_owned_byte_counter = PREVIEW_SZ;
+	int song_playable = FALSE;
+	int song_playable_byte_counter = PREVIEW_SZ;
 
 	// Initialize buffer offset;
 	int buffer_offset = 0;
@@ -743,13 +743,31 @@ void play_encrypted_song(unsigned char *key) {
 
 		// Still in play while loop
 		if (c->cmd == READ_CHUNK) {
+
+			// First time run
 			if (chunks_decrypted == 0) {
+				// Check to see if logged in user
 				if (s.logged_in && s.uid == s.purdue_md.owner_id) {
-					song_owned = TRUE;
-				} else {
-					mb_printf("User is not logged in, or does not own song\r\n");
+					song_playable = TRUE;
+				}
+
+				// Check if any of the song's regions match the player's regions
+				for (int i = 0; i < s.purdue_md.num_regions; i++) {
+					if (is_provisioned_rid(s.purdue_md.provisioned_regions[i])) {
+						for (int n = 0; n < s.purdue_md.num_users; n++) {
+							if (s.uid == s.purdue_md.provisioned_users[n]) {
+								song_playable = TRUE;
+								break;
+							}
+						}
+					}
+				}
+
+				if (song_playable == FALSE) {
+					mb_printf("Song is not valid for the region or the user does not have access to this song\r\n");
 					mb_printf("Only playing 30s\r\n");
 				}
+
 				s.play_state = DECRYPT;
 			}
 
@@ -786,8 +804,8 @@ void play_encrypted_song(unsigned char *key) {
 				}
 
 				// Check if playing 30seconds
-				if (song_owned == FALSE && song_owned_byte_counter <= cp_num) {
-					cp_num = song_owned_byte_counter;
+				if (song_playable == FALSE && song_playable_byte_counter <= cp_num) {
+					cp_num = song_playable_byte_counter;
 				}
 
 				// do first mem cpy here into DMA BRAM
@@ -810,7 +828,7 @@ void play_encrypted_song(unsigned char *key) {
 				fnAudioPlay(sAxiDma, offset, cp_num);
 
 				bytes_to_play -= cp_num;
-				song_owned_byte_counter -= cp_num;
+				song_playable_byte_counter -= cp_num;
 
 				if (bytes_to_play <= 0) {
 					bytes_to_play = SONG_CHUNK_SZ;
@@ -819,7 +837,7 @@ void play_encrypted_song(unsigned char *key) {
 				}
 
 				// STOP PLAYBACK
-				if (song_owned_byte_counter == 0 && song_owned == FALSE) {
+				if (song_playable_byte_counter == 0 && song_playable == FALSE) {
 					set_stopped();
 					return;
 				} else if (chunk_counter + 1 == chunks_to_read) {
