@@ -43,6 +43,7 @@
 #define META_DATA_ALLOC 4
 #define SONG_CHUNK_SZ 16000
 #define ENC_BUFFER_SZ 60
+#define SHA_256_SUM_SZ 32
 
 // structs to import secrets.h JSON data into memory
 typedef struct {
@@ -79,6 +80,7 @@ typedef struct {
 #define q_user_lookup(q, i) (q.users + (i * USERNAME_SZ))
 
 typedef struct __attribute__ ((__packed__)) {
+	unsigned char sha256sum[SHA_256_SUM_SZ];
     uint32_t owner_id;
     uint8_t num_regions;
     uint8_t num_users;

@@ -24,6 +24,8 @@ import nacl.encoding
 # calculating the chunk remainder
 from math import floor
 
+import secrets
+
 # TODO: Move encryption processes to separate functions
 # TODO: Map arguments to correct variables
 # TODO: Move nonces to encrypted chunk, keep first nonce public
@@ -48,9 +50,20 @@ class ProtectedSong(object):
         wave_header_size = 44   # http://soundfile.sapp.org/doc/WaveFormat/
         aad_size = 4            # Use 4 bytes to store aad size
         metadata_size_allocation = 4
-
+        sha256sum_sz = 32
+        iv = secrets.token_bytes(12)
+    
         encoder = nacl.encoding.RawEncoder
         encrypted_file_size = 0 # Track total file size
+        
+        song = open(self.song, "rb")
+
+        song_data = song.read()
+        song.close()
+
+        sha256sum = nacl.hash.sha256(song_data, encoder=encoder)
+
+        self.metadata = sha256sum + self.metadata
 
         print("Setting chunksize to " + str(chunk_size) + " bytes")
 
@@ -110,11 +123,8 @@ class ProtectedSong(object):
 
         # Write Encrypted wave header
         encrypted_song.write(encrypted_header)
-
-        #Hash Metadata
-        metadata_hash = nacl.hash.sha256(self.metadata, encoder=encoder)
         
-        nonce = metadata_hash[:hash_byte_size]
+        nonce = iv
 
         #Write nonce to encrypted_song
         encrypted_song.write(nonce)
@@ -153,7 +163,7 @@ class ProtectedSong(object):
             encrypted_song.write(nonce)
             
             #aad equal to most signifigant bit?
-            aad = int.to_bytes(i, aad_size, 'little')
+            aad = sha256sum
 
             encrypted_chunk = b.crypto_aead_chacha20poly1305_ietf_encrypt(chunk_buffer, aad, nonce, key)
             #print("Encrypted Chunk Size: " + str(len(encrypted_chunk)))
@@ -182,7 +192,7 @@ class ProtectedSong(object):
         encrypted_song.write(nonce)
 
         #encrypts chunk with aad, nonce, key, chunk_buffer
-        aad = int.to_bytes(chunk_to_read + 1, aad_size, 'little')
+        aad = sha256sum
         encrypted_chunk = b.crypto_aead_chacha20poly1305_ietf_encrypt(chunk_buffer, aad, nonce, key)
 
         #sets encrypted chunk tag to the last 16 characters

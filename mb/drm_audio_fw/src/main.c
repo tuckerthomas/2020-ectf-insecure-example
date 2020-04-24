@@ -255,7 +255,7 @@ int read_metadata(struct chachapoly_ctx *ctx, encryptedMetadata *metadata) {
 }
 
 // Read a chunk of specific size and number, decrypt and copy into the FIFO buffer
-int read_chunks(struct chachapoly_ctx *ctx, unsigned char *chunk_buffer, unsigned char *key, int chunk_size, int chunk_num, int buffer_loc) {
+int read_chunks(struct chachapoly_ctx *ctx, unsigned char *chunk_buffer, unsigned char *sha256sum, int chunk_size, int chunk_num, int buffer_loc) {
 	unsigned char nonce[NONCE_SIZE];
 	unsigned char tag[MAC_SIZE];
 	int aad = chunk_num;
@@ -265,7 +265,7 @@ int read_chunks(struct chachapoly_ctx *ctx, unsigned char *chunk_buffer, unsigne
 	memcpy(tag, (unsigned char *) &c->encSongBuffer[buffer_loc].tag, MAC_SIZE);
 
 	// Decrypt the chunk
-	int ret = chachapoly_crypt(ctx, nonce, &aad, sizeof(aad), (unsigned char *)&c->encSongBuffer[buffer_loc].data, chunk_size, chunk_buffer, tag, MAC_SIZE, 0);
+	int ret = chachapoly_crypt(ctx, nonce, sha256sum, SHA_256_SUM_SZ, (unsigned char *)&c->encSongBuffer[buffer_loc].data, chunk_size, chunk_buffer, tag, MAC_SIZE, 0);
 
 	if (ret == CHACHAPOLY_OK) {
 		return 0;
@@ -504,6 +504,7 @@ void share_enc_song(unsigned char *key) {
     purdue_md newMetaData = emptyMd;
 
     // Copy data into new metadata
+    memcpy(newMetaData.sha256sum, s.purdue_md.sha256sum, SHA_256_SUM_SZ);
     newMetaData.owner_id = s.purdue_md.owner_id;
     newMetaData.num_regions = s.purdue_md.num_regions;
     newMetaData.num_users = s.purdue_md.num_users;
@@ -610,7 +611,7 @@ void digital_out(unsigned char *key) {
 					chunk_size = chunk_remainder;
 				}
 
-				if (read_chunks(&ctx, chunk_buffer, key, chunk_size, chunk_counter, buffer_loc) == 0) {
+				if (read_chunks(&ctx, chunk_buffer, s.purdue_md.sha256sum, chunk_size, chunk_counter, buffer_loc) == 0) {
 					memcpy((unsigned char *)&c->songBuffer[SONG_CHUNK_SZ * buffer_loc], chunk_buffer, chunk_size);
 					chunk_counter++;
 					chunks_decrypted++;
@@ -783,7 +784,7 @@ void play_encrypted_song(unsigned char *key) {
 				}
 
 				// Read and decrypt the chunk
-				if (read_chunks(&ctx, chunk_buffer, key, chunk_size, chunk_counter, buffer_loc) == 0) {
+				if (read_chunks(&ctx, chunk_buffer, s.purdue_md.sha256sum, chunk_size, chunk_counter, buffer_loc) == 0) {
 					chunk_counter++;
 					chunks_decrypted++;
 					s.play_state = COPY;
