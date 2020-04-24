@@ -142,59 +142,84 @@ void read_enc_chunk(FILE *fp, int chunk_size, int buffer_loc) {
 void *decryption_thread(void *song_name) {
 	std::cout << "Starting decryption thread!" << std::endl;
 
-	// load song into shared buffer
-	FILE *fp = read_enc_file_header((char *)song_name);
-	if (fp == NULL) {
-		return (void *) -1;
-	}
+	// handle restart
+	do {
+		send_command(PLAY_SONG);
 
-	while (c->drm_state == STOPPED)
-		continue;
-	while (c->drm_state == WORKING)
-		continue;
+		while (c->drm_state == STOPPED)
+			continue; // wait for DRM to start working
+		while (c->drm_state == WORKING)
+			continue; // wait for DRM to dump file
 
-	if (c->drm_state == WAITING_METADATA) {
-		int metadata_size = c->metadata_size;
-		read_enc_metadata(fp, metadata_size);
-	}
+		FILE *fp;
 
-	while (c->drm_state == WAITING_METADATA) {
-		continue;
-	}
+		if (c->drm_state == WAITING_FILE_HEADER) {
+			// load file into shared buffer
+			std::cout << "Opening " << (char *) song_name << std::endl;
+			fp = read_enc_file_header((char *) song_name);
+		}
 
-	send_command(WAIT_FOR_CHUNK);
+		if (fp == NULL) {
+			std::cout << "Could not open " << (char *) song_name << std::endl;
+			return (void *) -1;
+		}
 
-	// Create a buffer before playing
-	for (int i = 0; i < ENC_BUFFER_SZ; i++) {
-		int chunk_size = c->chunk_size;
-		read_enc_chunk(fp, chunk_size, i);
-	}
-	send_command(READ_CHUNK);
+		// Wait for new command;
+		while (c->drm_state == STOPPED)
+			continue;
+		while (c->drm_state == WORKING)
+			continue;
 
-	while (1) {
-		if (c->drm_state == WAITING_CHUNK) {
-			// Read encrypted chunks from rfp
-			for (int i = 0; i < ENC_BUFFER_SZ / 2; i++) {
-				int chunk_size = c->chunk_size;
+		if (c->drm_state == WAITING_METADATA) {
+			int metadata_size = c->metadata_size;
+			read_enc_metadata(fp, metadata_size);
+		}
 
-				// Check for offset
-				int buffer_loc = i + ((ENC_BUFFER_SZ / 2) * c->buffer_offset);
+		while (c->drm_state == WAITING_METADATA) {
+			continue;
+		}
 
-				read_enc_chunk(fp, chunk_size, buffer_loc);
+		send_command(WAIT_FOR_CHUNK);
+
+		// Initialize a buffer before playing
+		for (int i = 0; i < ENC_BUFFER_SZ; i++) {
+			int chunk_size = c->chunk_size;
+			read_enc_chunk(fp, chunk_size, i);
+		}
+		send_command(READ_CHUNK);
+
+		while (1) {
+			if (c->drm_state == WAITING_CHUNK) {
+				// Read encrypted chunks from rfp
+				for (int i = 0; i < ENC_BUFFER_SZ / 2; i++) {
+					int chunk_size = c->chunk_size;
+
+					// Check for offset
+					int buffer_loc = i
+							+ ((ENC_BUFFER_SZ / 2) * c->buffer_offset);
+
+					read_enc_chunk(fp, chunk_size, buffer_loc);
+				}
+
+				c->drm_state = READING_CHUNK;
+				usleep(500);
 			}
 
-			c->drm_state = READING_CHUNK;
+			if (c->drm_state == STOPPED) {
+				std::cout << "Song playback stopped" << std::endl;
+				fclose(fp);
+				break;
+			}
 
-			usleep(500);
+			if (c->drm_state == WAITING_FILE_HEADER) {
+				std::cout << "Restarting playback" << std::endl;
+				fclose(fp);
+				break;
+			}
 		}
+	} while (c->drm_state != STOPPED);
 
-		if (c->drm_state == STOPPED) {
-			std::cout << "Leaving decryption thread!" << std::endl;
-			break;
-		}
-	}
-
-	fclose(fp);
+	std::cout << "Leaving decryption thread!" << std::endl;
 
 	return (void *) 0;
 }

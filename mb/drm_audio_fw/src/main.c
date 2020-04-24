@@ -219,8 +219,6 @@ unsigned int read_header(struct chachapoly_ctx *ctx, waveHeaderMetaStruct *waveH
 
 		s.total_bytes_to_play = waveHeaderMeta->wave_header.wav_size;
 
-		// Continue Decryption
-		set_waiting_metadata();
 		return waveHeaderMeta->metadata_size;
 	} else {
 		mb_printf("Header modification detected!\r\n");
@@ -663,24 +661,11 @@ void play_encrypted_song(unsigned char *key) {
 	chachapoly_init(&ctx, key, 256);
 
 	waveHeaderMetaStruct waveHeaderMeta;
+	encryptedMetadata metadata;
 
-	int metadata_size = read_header(&ctx, &waveHeaderMeta);
-	if (metadata_size == -1) {
-		mb_printf("Song not valid!\r\n");
-		return;
-	}
-	c->metadata_size = metadata_size;
-
-	// Start waiting for metadata
-	set_waiting_metadata();
-
+	int metadata_size = 0;
 	int chunks_to_read, chunk_counter = 1;
 	int chunk_remainder;
-
-	chunks_to_read = waveHeaderMeta.wave_header.wav_size / SONG_CHUNK_SZ;
-	chunk_remainder = waveHeaderMeta.wave_header.wav_size % SONG_CHUNK_SZ;
-
-	encryptedMetadata metadata;
 
 	// Boolean for 30s buffer
 	int song_owned = FALSE;
@@ -697,13 +682,30 @@ void play_encrypted_song(unsigned char *key) {
 	int bytes_to_play = SONG_CHUNK_SZ;
 	int first_time_play = TRUE;
 
+	set_waiting_file_header();
+
 	while (1) {
-		//mb_printf("In Play loop\r\n");
 		while (InterruptProcessed) {
 			InterruptProcessed = FALSE;
 			set_working();
 
 			switch (c->cmd) {
+			case READ_HEADER:
+				metadata_size = read_header(&ctx, &waveHeaderMeta);
+				if (metadata_size == -1) {
+					mb_printf("Song not valid!\r\n");
+					return;
+				}
+				c->metadata_size = metadata_size;
+
+				// Determine how many chunks are going to be read
+				// Determine the last chunk size
+				chunks_to_read = waveHeaderMeta.wave_header.wav_size / SONG_CHUNK_SZ;
+				chunk_remainder = waveHeaderMeta.wave_header.wav_size % SONG_CHUNK_SZ;
+
+				// Start waiting for metadata
+				set_waiting_metadata();
+				break;
 			case READ_METADATA:
 				if (read_metadata(&ctx, &metadata) == 0) {
 					c->total_chunks = chunks_to_read;
@@ -725,8 +727,12 @@ void play_encrypted_song(unsigned char *key) {
 				c->cmd = READ_CHUNK;
 				break;
 			case RESTART:
-				// TODO: implement
-				break;
+				mb_printf("Restarting...\r\n");
+				set_waiting_file_header();
+
+				usleep(500);
+
+				return;
 			case STOP:
 				mb_printf("Stopping playback...\r\n");
 				return;
@@ -761,6 +767,8 @@ void play_encrypted_song(unsigned char *key) {
 					chunk_counter++;
 					chunks_decrypted++;
 					s.play_state = COPY;
+				} else {
+					return;
 				}
 			}
 
@@ -924,7 +932,7 @@ int main() {
             case DIGITAL_OUT:
                 digital_out(key);
                 break;
-            case READ_HEADER:
+            case PLAY_SONG:
             	play_encrypted_song(key);
             	break;
             default:
