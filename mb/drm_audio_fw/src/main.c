@@ -19,7 +19,7 @@
 #include "sleep.h"
 
 // Bearssl Library
-#include <bearssl.h>
+#include <bearssl_hash.h>
 
 // Chacha20+poly1305 implementation
 #include "chachapoly/chachapoly.h"
@@ -51,7 +51,7 @@ const struct color BLUE =   {0x0000, 0x0000, 0x01ff};
 volatile cmd_channel *c = (cmd_channel*)SHARED_DDR_BASE;
 
 // internal state store
-internal_state s;
+static internal_state s;
 
 // Large chunk buffer
 static unsigned char chunk_buffer[SONG_CHUNK_SZ];
@@ -153,52 +153,6 @@ int username_to_uid(char *username, u32 *uid, int provisioned_only) {
     return FALSE;
 }
 
-// checks if the song loaded into the shared buffer is locked for the current user
-int is_locked() {
-    int locked = TRUE;
-
-    // check for authorized user
-    if (!s.logged_in) {
-        mb_printf("No user logged in");
-    } else {
-        load_song_md();
-
-        // check if user is authorized to play song
-        if (s.uid == s.song_md.owner_id) {
-            locked = FALSE;
-        } else {
-            for (int i = 0; i < NUM_PROVISIONED_USERS && locked; i++) {
-                if (s.uid == s.song_md.uids[i]) {
-                    locked = FALSE;
-                }
-            }
-        }
-
-        if (locked) {
-            mb_printf("User '%s' does not have access to this song", s.username);
-            return locked;
-        }
-        mb_printf("User '%s' has access to this song", s.username);
-        locked = TRUE; // reset lock for region check
-
-        // search for region match
-        for (int i = 0; i < s.song_md.num_regions; i++) {
-            for (int j = 0; j < (u8)NUM_PROVISIONED_REGIONS; j++) {
-                if (provisioned_rid[j].provisioned_regionID == s.song_md.rids[i]) {
-                    locked = FALSE;
-                }
-            }
-        }
-
-        if (!locked) {
-            mb_printf("Region Match. Full Song can be played. Unlocking...");
-        } else {
-            mb_printf("Invalid region");
-        }
-    }
-    return locked;
-}
-
 // Converts hex string to binary array
 static size_t hextobin(unsigned char *dst, const char *src) {
 	size_t num;
@@ -249,7 +203,8 @@ void hash_pin(const char *pin, const char *salt, unsigned char *hashpinBuffer) {
 
 // Validates a given encrypted waveHeader
 unsigned int read_header(struct chachapoly_ctx *ctx, waveHeaderMetaStruct *waveHeaderMeta) {
-	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
+	unsigned char nonce[NONCE_SIZE];
+	unsigned char tag[MAC_SIZE];
 	unsigned char aad[12] = "wave_header";
 
 	//set_working();
@@ -278,7 +233,8 @@ unsigned int read_header(struct chachapoly_ctx *ctx, waveHeaderMetaStruct *waveH
 
 // Validates a given metadata
 int read_metadata(struct chachapoly_ctx *ctx, encryptedMetadata *metadata) {
-	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
+	unsigned char nonce[NONCE_SIZE];
+	unsigned char tag[MAC_SIZE];
 	unsigned char aad[10] = "meta_data";
 	unsigned char metadata_buffer[METADATA_SZ];
 
@@ -302,7 +258,8 @@ int read_metadata(struct chachapoly_ctx *ctx, encryptedMetadata *metadata) {
 
 // Read a chunk of specific size and number, decrypt and copy into the FIFO buffer
 int read_chunks(struct chachapoly_ctx *ctx, unsigned char *chunk_buffer, unsigned char *key, int chunk_size, int chunk_num, int buffer_loc) {
-	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
+	unsigned char nonce[NONCE_SIZE];
+	unsigned char tag[MAC_SIZE];
 	int aad = chunk_num;
 
 	// Copy data to buffers
@@ -338,7 +295,7 @@ int toggle_offset(int offset) {
 
 
 // Calculate metadata hash, encrypt metadta and store into metadata buffer
-void encryptMetaData(unsigned char *key, char *metadata, encryptedMetadata *enc_metadata) {
+void encryptMetaData(struct chachapoly_ctx *cha_ctx, char *metadata, encryptedMetadata *enc_metadata) {
 	char nonce[NONCE_SIZE];
 	char aad[] = "meta_data";
 	char tag_buffer[MAC_SIZE];
@@ -353,15 +310,14 @@ void encryptMetaData(unsigned char *key, char *metadata, encryptedMetadata *enc_
     char sha_compute[br_sha256_SIZE];
     br_sha256_out(&ctx, sha_compute);
 
-    // Pull the first 16 bytes for the nonce
+    // Pull the first 12 bytes for the nonce
     memcpy(nonce, sha_compute, NONCE_SIZE);
 
     // Encrypt the metadata
-	br_poly1305_ctmul_run(key, nonce, metadata, METADATA_SZ, &aad, sizeof(aad), tag_buffer, br_chacha20_ct_run, 1);
+	chachapoly_crypt(cha_ctx, nonce, &aad, sizeof(aad), metadata, METADATA_SZ, enc_metadata->metadata, tag_buffer, MAC_SIZE, 1);
 
 	// Copy encrypted metadata to the command buffer
 	memcpy(enc_metadata->nonce, nonce, NONCE_SIZE);
-	memcpy(enc_metadata->metadata, metadata, METADATA_SZ);
 	memcpy(enc_metadata->tag, tag_buffer, MAC_SIZE);
 
 	return;
@@ -415,7 +371,6 @@ void login() {
         memset((void*)c->pin, 0, MAX_PIN_SZ);
     }
 }
-
 
 // attempt to log out
 void logout() {
@@ -499,33 +454,39 @@ void share_enc_song(unsigned char *key) {
     encryptedMetadata metadata;
     if (read_metadata(&ctx, &metadata) != 0) {
     	mb_printf("Metadta could not be validated \r\n");
+    	set_stopped();
     	return;
     }
 
     // Check if a user is logged in
     if (!s.logged_in) {
         mb_printf("No user is logged in. Cannot share song\r\n");
-        c->share_rejected = 0;
+        c->share_rejected = 1;
+        set_stopped();
 		return;
     // Check if the user that is logged in is the owner of the song
     } else if (s.uid != s.purdue_md.owner_id) {
         mb_printf("User '%s' is not song's owner. Cannot share song\r\n", s.username);
-        c->share_rejected = 0;
+        c->share_rejected = 1;
+        set_stopped();
         return;
     // Check if the username is a valid user
     } else if (!username_to_uid((char *)c->username, &uid, TRUE)) {
         mb_printf("Username not found\r\n");
-        c->share_rejected = 0;
+        c->share_rejected = 1;
+        set_stopped();
         return;
     // Check if they own the song
     } else if(uid == s.purdue_md.owner_id){
         mb_printf("User is owner\r\n");
-        c->share_rejected = 0;
+        c->share_rejected = 1;
+        set_stopped();
 		return;
 	// Check if the song has already been shared to the max amount of users
 	} else if(s.purdue_md.num_users == MAX_USERS) {
 		mb_printf("User has already shared this song to the max amount of users\r\n");
-		c->share_rejected = 0;
+		c->share_rejected = 1;
+		set_stopped();
 		return;
 	}
 
@@ -533,7 +494,8 @@ void share_enc_song(unsigned char *key) {
 	for(int i = 0; i < s.purdue_md.num_users; i++){
 		if(uid == s.purdue_md.provisioned_users[i]){
        		mb_printf("User is already shared\r\n");
-       		c->share_rejected = 0;
+       		c->share_rejected = 1;
+       		set_stopped();
 			return;
 		}
 	}
@@ -563,12 +525,14 @@ void share_enc_song(unsigned char *key) {
     // Prepare the new metadata to be encrypted
     char metadata_buffer[METADATA_SZ];
 
-    memcpy(metadata_buffer, (const unsigned char*)&newMetaData, sizeof(newMetaData));
+    memcpy(metadata_buffer, &newMetaData, sizeof(purdue_md));
 
     // Encrypt the new metadata and copy it into the command buffer
-    encryptMetaData(key, metadata_buffer, (encryptedMetadata *)&c->encMetadata);
+    encryptMetaData(&ctx, metadata_buffer, (encryptedMetadata *)&c->encMetadata);
 
     mb_printf("Shared song with '%s'\r\n", c->username);
+
+    return;
 }
 
 // removes DRM data from song for digital out
@@ -781,7 +745,7 @@ void play_encrypted_song(unsigned char *key) {
 		// Still in play while loop
 		if (c->cmd == READ_CHUNK) {
 			if (chunks_decrypted == 0) {
-				if (s.logged_in == TRUE && s.uid == s.purdue_md.owner_id) {
+				if (s.logged_in && s.uid == s.purdue_md.owner_id) {
 					song_owned = TRUE;
 				} else {
 					mb_printf("User is not logged in, or does not own song\r\n");
@@ -855,7 +819,10 @@ void play_encrypted_song(unsigned char *key) {
 				}
 
 				// STOP PLAYBACK
-				if (chunk_counter + 1 == chunks_to_read || song_owned_byte_counter == 0) {
+				if (song_owned_byte_counter == 0 && song_owned == FALSE) {
+					set_stopped();
+					return;
+				} else if (chunk_counter + 1 == chunks_to_read) {
 					set_stopped();
 					return;
 				}
@@ -929,6 +896,8 @@ int main() {
 
     // clear command channel
     memset((void *)c, 0, sizeof(cmd_channel));
+
+    mb_printf("Size of command channel %d", sizeof(cmd_channel));
 
     mb_printf("Audio DRM Module has Booted\n\r");
     // Load keys/secrets

@@ -121,16 +121,12 @@ void read_enc_metadata(FILE *fp, int metadata_size) {
 		return;
 	}
 
-	printf("reading metadata of size %i\r\n", metadata_size);
-
 	int metadata_total_size = NONCE_SIZE + MAC_SIZE + metadata_size;
 	unsigned char meta_buffer[metadata_total_size];
 
 	fread(meta_buffer, metadata_total_size, 1, fp);
 
 	memcpy((void *)&(c->encMetadata), meta_buffer, metadata_total_size);
-
-	std::cout << "Last byte: " << c->encMetadata.metadata[METADATA_SZ - 1] << std::endl;
 
 	send_command(READ_METADATA);
 
@@ -224,8 +220,8 @@ void *decryption_thread(void *song_name) {
 void login(std::string& username, std::string& pin) {
 	//TODO change pin.size() check to the password specified by the rules (5)
 	std::cout << "Checking username: '" << username << "' pin: '" << pin << "'" << std::endl;
-	if (username.size() == 0 || pin.size() == 0 || username.size() > 8
-			|| pin.size() > 10) {
+	if (username.size() == 0 || pin.size() == 0 || username.size() > USERNAME_SZ
+			|| pin.size() > MAX_PIN_SZ) {
 		std::cout << "Invalid user name/PIN\r\n";
 		print_help();
 		return;
@@ -237,13 +233,18 @@ void login(std::string& username, std::string& pin) {
 					"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890_")
 					!= std::string::npos) {
 		std::cerr << "Error username/pin not valid\n";
-		exit(1); // change this as needed
+		return;
 	}
-	//drive DRM
+
 	//instead of strcpy use '=' operator
-	username.copy((char *) c->username, USERNAME_SZ, 0);
-	pin.copy((char *)c->pin, MAX_PIN_SZ, 0);
+	strncpy((char *) c->username, username.c_str(), USERNAME_SZ);
+	strncpy((char *) c->pin, pin.c_str(), MAX_PIN_SZ);
+
+	std::cout << "here maybe?" << std::endl;
+
 	send_command(LOGIN);
+    while (c->drm_state == STOPPED) continue; // wait for DRM to start working
+    while (c->drm_state == WORKING) continue; // wait for DRM to dump file
 }
 
 // logs out for a user
@@ -285,8 +286,6 @@ void query_player() {
 void query_enc_song(std::string song_name) {
 	FILE *fd;
 
-	std::cout << "Metadata size should be: " << sizeof(purdue_md) << std::endl;
-	std::cout << "Checking for metadata of size: " << METADATA_SZ << std::endl;
 	char encryptedMetadataBuffer[ENC_METADATA_SZ];
 
 	// Open the file in read(byte) mode
@@ -297,9 +296,8 @@ void query_enc_song(std::string song_name) {
 		return;
 	}
 
-	std::cout << "Current position: " << ftell(fd) << std::endl;
+	// Seek past the wave header
 	fseek(fd, sizeof(encryptedWaveheader), SEEK_SET);
-	std::cout << "Seeked position: " << ftell(fd) << std::endl;
 
 	// Read the encrypted metadata into the buffer
 	fread(encryptedMetadataBuffer, ENC_METADATA_SZ, 1, fd);
@@ -319,7 +317,9 @@ void query_enc_song(std::string song_name) {
 	std::cout << "Owner: " << c->query.owner << std::endl;
 
 	std::string buffer((char *)q_region_lookup(c->query, 0));
+
 	std::cout << "Regions: " << buffer;
+
 	for (unsigned int i = 1; i < c->query.num_regions; i++) {
 		buffer = std::string((char *)q_region_lookup(c->query, i));
 		std::cout << ", " << buffer;
@@ -469,8 +469,8 @@ void digital_out(std::string song_name) {
 
 // attempts to share a song with a user
 void share_enc_song(std::string& song_name, std::string& username) {
+	std::cout << "Sharing " << song_name << " with " << username << std::endl;
 	FILE *fd;
-	unsigned int length;
 
 	if (username.empty()) {
 		std::cout << "Need song name and username\r\n";
@@ -489,9 +489,7 @@ void share_enc_song(std::string& song_name, std::string& username) {
 		return;
 	}
 
-	std::cout << "Starting at " << ftell(fd) << std::endl;
 	fseek(fd, ENC_WAVE_HEADER_SZ + META_DATA_ALLOC, SEEK_SET);
-	std::cout << "Seeked to " << ftell(fd) << std::endl;
 
 	// Read the encrypted metadata into the buffer
 	fread(encryptedMetadataBuffer, ENC_METADATA_SZ, 1, fd);
@@ -513,7 +511,7 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	while (c->drm_state == WORKING) continue; // wait for DRM to start working
 
 	// request was rejected if WAV length is 0
-	if (c->share_rejected == 0) {
+	if (c->share_rejected == 1) {
 		std::cerr << "Share rejected\r\n";
 		return;
 	}
@@ -575,6 +573,7 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	}
 
 	std::cout << "Finished writing file\r\n";
+	return;
 }
 
 void play_encrypted_song(std::string song_name) {
@@ -607,8 +606,6 @@ void play_encrypted_song(std::string song_name) {
 				return;
 			}
 		} while (usr_cmd.length() < 2); //chars are one byte so this is fine
-
-		std::cout << "Checking command: " << cmd << std::endl;
 
 		// parse and handle command
 		parse_input(usr_cmd, cmd, arg1, arg2);
@@ -690,8 +687,6 @@ int main(int argc, char** argv) {
 
 		// parse and handle command
 		parse_input(usr_cmd, cmd, arg1, arg2);
-
-		std::cout << "Checking command: '" << cmd << "'" << std::endl;
 
 		if (!cmd.empty()) {
 			if (cmd == "help") {
