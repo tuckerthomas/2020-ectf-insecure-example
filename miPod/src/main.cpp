@@ -546,6 +546,8 @@ void share_enc_song(std::string& song_name, std::string& username) {
 }
 
 void *decryption_thread(void *song_name) {
+	std::cout << "Starting decryption thread!" << std::endl;
+
 	// load song into shared buffer
 	FILE *fp = read_enc_file_header((char *)song_name);
 	if (fp == NULL) {
@@ -737,13 +739,13 @@ int main(int argc, char** argv) {
 				login(arg1, arg2);
 			} else if (cmd == "logout") {
 				logout();
-			} else if (cmd == "query_enc") {
+			} else if (cmd == "query") {
 				query_enc_song(arg1);
 			} else if (cmd == "digital_out") {
 				digital_out(arg1);
-			} else if (cmd == "share_enc") {
+			} else if (cmd == "share") {
 				share_enc_song(arg1, arg2);
-			} else if (cmd == "play_enc_song") {
+			} else if (cmd == "play") {
 				play_encrypted_song(arg1);
 			} else if (cmd == "exit") {
 				std::cout << "Exiting..." << std::endl;

@@ -263,7 +263,7 @@ unsigned int read_header(struct chachapoly_ctx *ctx, waveHeaderMetaStruct *waveH
 	unsigned char nonce[NONCE_SIZE], tag[MAC_SIZE];
 	unsigned char aad[12] = "wave_header";
 
-	set_working();
+	//set_working();
 
 	memcpy(nonce, (void *)&(c->encWaveHeaderMeta.nonce), NONCE_SIZE);
 	memcpy(tag, (void *)&(c->encWaveHeaderMeta.tag), MAC_SIZE);
