@@ -17,7 +17,6 @@ from math import floor
 
 # TODO: Move decryption processes to separate functions
 # TODO: Add argument parsing
-# TODO: Move nonces to encrypted chunk, keep first nonce public
 
 def decrypt_song(keys_loc, infile, outfile):
     """Description decrypts song 
@@ -107,7 +106,8 @@ def decrypt_song(keys_loc, infile, outfile):
     metadata = b.crypto_aead_chacha20poly1305_ietf_decrypt(encrypted_metadata_combined, aad, nonce, key)
 
     print("Decrypted metadata: " + str(metadata))
-
+    
+    # Get the sha256 sum from the metadata to use in aad
     sha256sum = metadata[:32]
     print("Sha256sum " + str(sha256sum))
 

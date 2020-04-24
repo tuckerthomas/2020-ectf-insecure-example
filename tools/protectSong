@@ -24,11 +24,11 @@ import nacl.encoding
 # calculating the chunk remainder
 from math import floor
 
+# Used for creating metadata nonce
 import secrets
 
 # TODO: Move encryption processes to separate functions
 # TODO: Map arguments to correct variables
-# TODO: Move nonces to encrypted chunk, keep first nonce public
 
 class ProtectedSong(object):
     """Example song object for protected song"""
@@ -50,7 +50,8 @@ class ProtectedSong(object):
         wave_header_size = 44   # http://soundfile.sapp.org/doc/WaveFormat/
         aad_size = 4            # Use 4 bytes to store aad size
         metadata_size_allocation = 4
-        sha256sum_sz = 32
+        
+        # Generate 12 byte IV
         iv = secrets.token_bytes(12)
     
         encoder = nacl.encoding.RawEncoder
@@ -58,11 +59,14 @@ class ProtectedSong(object):
         
         song = open(self.song, "rb")
 
+        # Read all of the song data
         song_data = song.read()
         song.close()
 
+        # Create a hash of the song data
         sha256sum = nacl.hash.sha256(song_data, encoder=encoder)
 
+        # Prepend the sum to the metadatat
         self.metadata = sha256sum + self.metadata
 
         print("Setting chunksize to " + str(chunk_size) + " bytes")
