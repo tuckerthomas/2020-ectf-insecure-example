@@ -543,8 +543,6 @@ void digital_out(unsigned char *key) {
 	waveHeaderMetaStruct waveHeaderMeta;
 	encryptedMetadata metadata;
 
-	mb_printf("Chunk size set to: %i\r\n", SONG_CHUNK_SZ);
-
 	// Metadata information
 	int metadata_size = 0;
 	int chunks_to_read, chunk_counter = 1;
@@ -576,7 +574,6 @@ void digital_out(unsigned char *key) {
 				// copy wave header to buffer
 				memcpy((unsigned char *)&c->wave_header, &waveHeaderMeta.wave_header, WAVE_HEADER_SZ);
 
-				mb_printf("Waiting for metadata!\r\n");
 				set_waiting_metadata();
 
 				chunks_to_read = waveHeaderMeta.wave_header.wav_size / SONG_CHUNK_SZ;
@@ -629,7 +626,6 @@ void digital_out(unsigned char *key) {
 
 			// Request more chunks
 			if (s.play_state == REQUEST) {
-				mb_printf("Requesting more chunks\r\n");
 				set_waiting_chunk();
 
 				// Start decrypting more chunks
@@ -668,8 +664,6 @@ void play_encrypted_song(unsigned char *key) {
 
 	waveHeaderMetaStruct waveHeaderMeta;
 
-	mb_printf("Chunk size set to: %i\r\n", SONG_CHUNK_SZ);
-
 	int metadata_size = read_header(&ctx, &waveHeaderMeta);
 	if (metadata_size == -1) {
 		mb_printf("Song not valid!\r\n");
@@ -677,8 +671,7 @@ void play_encrypted_song(unsigned char *key) {
 	}
 	c->metadata_size = metadata_size;
 
-	mb_printf("Waiting for metadata!\r\n");
-
+	// Start waiting for metadata
 	set_waiting_metadata();
 
 	int chunks_to_read, chunk_counter = 1;
@@ -777,7 +770,6 @@ void play_encrypted_song(unsigned char *key) {
 
 				int cp_num = (bytes_to_play > CHUNK_SZ) ? CHUNK_SZ : bytes_to_play;
 				int offset = (chunks_copied % 2) ? 0 : CHUNK_SZ;
-				//int offset = 0;
 
 				// Check if on the last chunk
 				// This is plus one because it gets increase after decrypting the chunk
@@ -830,7 +822,6 @@ void play_encrypted_song(unsigned char *key) {
 
 			// Request more chunks
 			if (s.play_state == REQUEST) {
-				mb_printf("Requesting more chunks\r\n");
 				set_waiting_chunk();
 
 				// Start decrypting more chunks

@@ -59,8 +59,6 @@ void parse_input(std::string input, std::string& cmd, std::string& arg1,
 		}
 	}
 
-	//std::cout << "cmd: '" << inputs[0] << "' arg1: '" << inputs[1] << "' arg2: '" << inputs[2] << "'" << std::endl;
-
 	cmd = inputs[0];
 	arg1 = inputs[1];
 	arg2 = inputs[2];
@@ -68,9 +66,7 @@ void parse_input(std::string input, std::string& cmd, std::string& arg1,
 }
 
 // prints the help message while not in playback
-//done
 void print_help() {
-	//cout is more secure than a printf variant because cout doesn't have format specifiers
 	std::cout << "miPod options:\r\n";
 	std::cout << "  login<username> <pin>: log on to a miPod account (must be logged out)\r\n";
 	std::cout << "  logout: log off a miPod account (must be logged in)\r\n";
@@ -88,8 +84,8 @@ void print_playback_help() {
 	std::cout << "  pause: pause the song\r\n";
 	std::cout << "  resume: resume the paused song\r\n";
 	std::cout << "  restart: restart the song\r\n";
-	std::cout << "  ff: fast forwards 5 seconds(unsupported)\r\n"; // we probably shouldn't print this
-	std::cout << "  rw: rewind 5 seconds (unsupported)\r\n"; // we probably shoudln't print this
+	std::cout << "  ff: fast forwards 5 seconds(unsupported)\r\n";
+	std::cout << "  rw: rewind 5 seconds (unsupported)\r\n";
 	std::cout << "  help: display this message\r\n";
 }
 
@@ -102,8 +98,6 @@ FILE *read_enc_file_header(std::string fname) {
 		std::cout << "Could not open file! Error = " << (errno) << std::endl;
 		return NULL;
 	}
-
-	printf("Size of waveheader: %i, Size of enc_wave_header: %i\r\n", sizeof(waveHeaderStruct), sizeof(encryptedWaveheader));
 
 	fread((encryptedWaveheader *) &(c->encWaveHeader), sizeof(encryptedWaveheader), 1, fd);
 
@@ -160,33 +154,25 @@ void *decryption_thread(void *song_name) {
 		continue;
 
 	if (c->drm_state == WAITING_METADATA) {
-		std::cout << "Start reading metadata!" << std::endl;
 		int metadata_size = c->metadata_size;
 		read_enc_metadata(fp, metadata_size);
 	}
 
-	std::cout << "Waiting for metadata to process" << std::endl;
 	while (c->drm_state == WAITING_METADATA) {
 		continue;
 	}
-	std::cout << "Metadata Processed!" << std::endl;
-
-	std::cout << "Check if we can send a song chunk" << std::endl;
 
 	send_command(WAIT_FOR_CHUNK);
 
-	std::cout << "Initialize buffer" << std::endl;
+	// Create a buffer before playing
 	for (int i = 0; i < ENC_BUFFER_SZ; i++) {
 		int chunk_size = c->chunk_size;
 		read_enc_chunk(fp, chunk_size, i);
 	}
-	std::cout << "Buffer finished" << std::endl;
 	send_command(READ_CHUNK);
 
 	while (1) {
 		if (c->drm_state == WAITING_CHUNK) {
-			std::cout << "Updating buffer" << std::endl;
-
 			// Read encrypted chunks from rfp
 			for (int i = 0; i < ENC_BUFFER_SZ / 2; i++) {
 				int chunk_size = c->chunk_size;
@@ -196,8 +182,6 @@ void *decryption_thread(void *song_name) {
 
 				read_enc_chunk(fp, chunk_size, buffer_loc);
 			}
-
-			std::cout << "Updated buffer" << std::endl;
 
 			c->drm_state = READING_CHUNK;
 
@@ -239,8 +223,6 @@ void login(std::string& username, std::string& pin) {
 	//instead of strcpy use '=' operator
 	strncpy((char *) c->username, username.c_str(), USERNAME_SZ);
 	strncpy((char *) c->pin, pin.c_str(), MAX_PIN_SZ);
-
-	std::cout << "here maybe?" << std::endl;
 
 	send_command(LOGIN);
     while (c->drm_state == STOPPED) continue; // wait for DRM to start working
@@ -385,34 +367,28 @@ void digital_out(std::string song_name) {
 		// Copy decrypted metadata to new file
 		fwrite((unsigned char *)c->wav_header, WAVE_HEADER_SZ, 1, wfp);
 
-		std::cout << "Start reading metadata!" << std::endl;
 		int metadata_size = c->metadata_size;
 		read_enc_metadata(rfp, metadata_size);
 		std::cout << "Metadata read!" << std::endl;
 	}
 
-	std::cout << "Waiting for metadata to process" << std::endl;
 	while (c->drm_state == WAITING_METADATA) {
 		continue;
 	}
 
 	send_command(WAIT_FOR_CHUNK);
 
-	std::cout << "Metadata Processed!" << std::endl;
-
-	std::cout << "Initialize buffer" << std::endl;
+	// Initialize a buffer before playing
 	for (int i = 0; i < ENC_BUFFER_SZ; i++) {
 		int chunk_size = c->chunk_size;
 		read_enc_chunk(rfp, chunk_size, i);
 	}
-	std::cout << "Buffer finished" << std::endl;
 	send_command(READ_CHUNK);
 
 	int total_chunks_written = 0;
 
 	while (1) {
 		while (c->drm_state == WAITING_CHUNK) {
-			std::cout << "Updating buffer" << std::endl;
 			// Read decrypted chunks from buffer
 			for (int i = 0; i < ENC_BUFFER_SZ / 2; i++) {
 				int buffer_loc = i + ((ENC_BUFFER_SZ / 2) * c->buffer_offset);
@@ -430,7 +406,6 @@ void digital_out(std::string song_name) {
 				read_enc_chunk(rfp, chunk_size, buffer_loc);
 			}
 
-			std::cout << "Updated buffer" << std::endl;
 			send_command(READ_CHUNK);
 		}
 
@@ -460,7 +435,7 @@ void digital_out(std::string song_name) {
 	}
 
 	std::cout << "Song dump finished" << std::endl;
-	std::cout << "Wrote " << total_chunks_written << " number of chunks" << std::endl;
+
 	fclose(wfp);
 	fclose(rfp);
 	return;
@@ -469,7 +444,7 @@ void digital_out(std::string song_name) {
 
 // attempts to share a song with a user
 void share_enc_song(std::string& song_name, std::string& username) {
-	std::cout << "Sharing " << song_name << " with " << username << std::endl;
+	std::cout << "Attempting to share " << song_name << " with " << username << std::endl;
 	FILE *fd;
 
 	if (username.empty()) {
@@ -510,12 +485,13 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	while (c->drm_state == STOPPED) continue; // wait for DRM to start working
 	while (c->drm_state == WORKING) continue; // wait for DRM to start working
 
-	// request was rejected if WAV length is 0
+	// Check if the share was rejected
 	if (c->share_rejected == 1) {
 		std::cerr << "Share rejected\r\n";
 		return;
 	}
 
+	// Get file size
 	fseek(fd, 0, SEEK_END);
 	int endFileSZ = ftell(fd);
 	fseek(fd, 0, SEEK_SET);
@@ -541,6 +517,7 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	// Write WAVE_HEADER
 	fwrite(buffer, ENC_WAVE_HEADER_SZ + META_DATA_ALLOC, 1, fd2);
 
+	// Seek past metadata
 	fseek(fd, ENC_METADATA_SZ, SEEK_CUR);
 
 	// Write new metadata
@@ -559,13 +536,10 @@ void share_enc_song(std::string& song_name, std::string& username) {
 	fclose(fd2);
 
 	// Delete old song file and rename new
-
 	if ( remove( song_name.c_str() ) != 0 ){
 		std::cerr << "Failed to remove file! Error = " << (errno) << "\r\n";
 		return;
 	}
-
-	std::cout << song_name << std::endl;
 
 	if ( rename( temp_song_name.c_str() , song_name.c_str() ) != 0 ){
 		std::cerr << "Failed to rename file! Error = " << (errno) << "\r\n";
@@ -655,10 +629,8 @@ void play_encrypted_song(std::string song_name) {
 //////////////////////// MAIN ////////////////////////
 
 int main(int argc, char** argv) {
-	std::cout << "Entering Main Loop" << std::endl;
 	int mem;
-	// char usr_cmd[USR_CMD_SZ + 1], *cmd = NULL, *arg1 = NULL, *arg2 = NULL;
-	// memset(usr_cmd, 0, USR_CMD_SZ + 1);
+
 	std::string usr_cmd = "";
 	std::string cmd;
 	std::string arg1 = "";
