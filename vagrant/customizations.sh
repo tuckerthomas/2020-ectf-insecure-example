@@ -39,5 +39,9 @@ sudo apt install -y python3-pip
 # Install PyNacl Library
 sudo pip3 install pynacl
 
+# Install numpy Library
+Sudo pip3 install numpy
+
+
 # Built BearSSL Library
 cd /ectf/BearSSL && make CONF=Microblaze
