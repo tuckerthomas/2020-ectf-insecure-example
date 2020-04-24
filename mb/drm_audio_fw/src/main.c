@@ -251,7 +251,7 @@ void hash_pin(const char *pin, const char *salt, unsigned char *hashpinBuffer) {
 
     br_sha256_context ctx;
 
-    br_sha256_init(&ctx); // TODO: Check
+    br_sha256_init(&ctx);
 
     br_sha256_update(&ctx, concatPin, strlen(concatPin));
 
@@ -399,13 +399,15 @@ void login() {
 
             	hash_pin((const char *)c->pin, device_users[i].salt, hashedPin);
             	if (!strncmp(hashedPin, binHash, 32)) {
-                    //update states
+                    // update states
                     s.logged_in = 1;
                     c->login_status = 1;
-                    // TODO: Change
+
+                    // Copy username, pin and uid to local state
                     memcpy(s.username, (void*)c->username, USERNAME_SZ);
                     memcpy(s.pin, (void*)c->pin, MAX_PIN_SZ);
                     s.uid = provisioned_uid[i].provisioned_userID;
+
                     mb_printf("Logged in for user '%s'\r\n", c->username);
                     return;
                 } else {
@@ -526,11 +528,18 @@ void share_enc_song(unsigned char *key) {
         mb_printf("Username not found\r\n");
         c->song.wav_size = 0;
         return;
+    // Check if they own the song
     } else if(uid == s.purdue_md.owner_id){
         mb_printf("User is owner\r\n");
         c->song.wav_size = 0;
 		return;
+	// Check if the song has already been shared to the max amount of users
+	} else if(s.purdue_md.num_users == MAX_USERS) {
+		mb_printf("User has already shared this song to the max amount of users\r\n");
+		c->song.wav_size = 0;
+		return;
 	}
+
 
 	for(int i = 0; i < s.purdue_md.num_users; i++){
 		if(uid == s.purdue_md.provisioned_users[i]){
@@ -553,7 +562,7 @@ void share_enc_song(unsigned char *key) {
     for (int i = 0; i < s.purdue_md.num_regions; i++) {
     	newMetaData.provisioned_regions[i] = s.purdue_md.provisioned_regions[i];
     }
-    // TODO: Check to set if there's already a max amount of users
+
     // Increase shared users
     for (int i = 0; i < s.purdue_md.num_users; i++) {
     	newMetaData.provisioned_users[i] = s.purdue_md.provisioned_users[i];
@@ -575,8 +584,6 @@ void share_enc_song(unsigned char *key) {
 
 // removes DRM data from song for digital out
 void digital_out(unsigned char *key) {
-	// TODO: work on requesting new chunks/refill buffer
-
 	struct chachapoly_ctx ctx;
 	chachapoly_init(&ctx, key, 256);
 
@@ -703,8 +710,6 @@ void digital_out(unsigned char *key) {
 }
 
 void play_encrypted_song(unsigned char *key) {
-	// TODO: implement restart
-
 	struct chachapoly_ctx ctx;
 	chachapoly_init(&ctx, key, 256);
 
