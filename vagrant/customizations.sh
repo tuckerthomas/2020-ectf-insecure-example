@@ -40,4 +40,4 @@ sudo apt install -y python3-pip
 sudo pip3 install pynacl
 
 # Built BearSSL Library
-#cd /ectf/BearSSL && make CONF=Microblaze
+cd /ectf/BearSSL && make CONF=Microblaze
