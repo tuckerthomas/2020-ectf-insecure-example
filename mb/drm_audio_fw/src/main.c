@@ -786,6 +786,7 @@ void play_encrypted_song(unsigned char *key) {
 					chunk_size = chunk_remainder;
 				}
 
+				// Read and decrypt the chunk
 				if (read_chunks(&ctx, chunk_buffer, key, chunk_size, chunk_counter, buffer_loc) == 0) {
 					chunk_counter++;
 					chunks_decrypted++;
