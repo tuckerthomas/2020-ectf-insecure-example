@@ -47,7 +47,7 @@ const struct color BLUE =   {0x0000, 0x0000, 0x01ff};
 #define set_waiting_chunk() change_state(WAITING_CHUNK, YELLOW)
 #define set_reading_chunk() change_state(READING_CHUNK, GREEN)
 
-// shared command channel -- read/write for both PS and PL
+// shared command channel between microblaze and linux
 volatile cmd_channel *c = (cmd_channel*)SHARED_DDR_BASE;
 
 // internal state store
@@ -323,7 +323,7 @@ void encryptMetaData(struct chachapoly_ctx *cha_ctx, char *metadata, encryptedMe
 
 //////////////////////// COMMAND FUNCTIONS ////////////////////////
 
-// attempt to log in to the credentials in the shared buffer
+// attempt to log into the credentials in the shared buffer
 void login() {
     if (s.logged_in) {
         mb_printf("Already logged in. Please log out first.\r\n");
@@ -420,6 +420,7 @@ void query_enc_song(unsigned char *key) {
     // Copy data into new metadata
     memset((void *)&c->query, 0, sizeof(query));
 
+    //purdue_md is the song metadata
     c->query.num_regions = s.purdue_md.num_regions;
     c->query.num_users = s.purdue_md.num_users;
 
@@ -657,6 +658,8 @@ void digital_out(unsigned char *key) {
 	return;
 }
 
+
+//Audio output of the encrypted song
 void play_encrypted_song(unsigned char *key) {
 	struct chachapoly_ctx ctx;
 	chachapoly_init(&ctx, key, 256);
@@ -717,6 +720,7 @@ void play_encrypted_song(unsigned char *key) {
 				} else {
 					return;
 				}
+            //Pause, play, restart and stop command handling
 			case PAUSE:
 				mb_printf("Pausing...\r\n");
 				set_paused();
