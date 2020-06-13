@@ -1,84 +1,127 @@
 #!/usr/bin/env python3
-#needs to match the location of the python interpreter in vagrant
-
 """
 Description: Generates system wide secrets containing all potential regions
 Use: Once per ecosystem of devices
 """
 
-import json
-from random import randint
-from argparse import ArgumentParser
+from argparse import ArgumentParser     # For command line argument parsing
+from secrets import token_hex           # For random hex number generation
+import json                             # For JSON encoded output
 
-CHARACTERLIST = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
 
 """
 Description: Main function that outputs a json file with a dictionary of regions with region Id's
+    
+    Args:
+        region_dict Dictionary of regions and randomized region Id's
+        file_name Outputfile name/path to which the Region Dictionary should be written to
 
-:param region_dict: Dictionary of regions and randomized region Id's
-:parm file_name: Outputfile name/path to which the Region Dictionary should be written to
-
-:return: Returns a json file with region dictionary with random Id's
+    Returns:
+        Returns a json file with region dictionary with random Id's
 """
+def main(region_list, file_name):
 
-def main(region_dict, file_name):
+    # Open outfile in write mode
     try:
-        secrets = open(file_name, "w")
+        secrets = open(outfile[0], mode="w")
+
+    # If outfile cannot be opened, print an error message
     except Exception as e:
         print("Unable to open secrets file: %s" % (e,))
         return 0
 
-    json.dump(region_dict, secrets)
+    # Intitialize empty list
+    regionList = []
+
+    # Fill regionList
+    for region in region_list:
+        
+        # Generate random regionID
+        regionID = token_hex(3)
+
+        # Prepend 0x to regionID
+        regionID = "0x" + regionID
+
+        # Add region and regionID to region list
+        regionList.append({
+            "regionName": region,
+            "regionID": regionID
+        })
+
+    # Encode userDictionary as JSON
+    dataToWrite = json.dumps(regionList, indent=4)
+
+    # Write JSON to outfile
+    secrets.write(dataToWrite)
+
+    # Close outfile
     secrets.close()
 
-"""
-Description: declares the 2 arguments that need to be passed to create the region dictionary
 
-:return: returns the list of user gnerated regions and the user specified file location
+    
+"""
+Declares the 2 arguments that need to be passed to create the region dictionary
+
+    Returns:
+        The list of user gnerated regions and the user specified file location
 """
 def get_args():
-    parser = ArgumentParser(description='main interface to provision system')
-    parser.add_argument('--region-list', help='list of regions for provisioning purposes',
-                        required=True, nargs='+')
-    parser.add_argument('--outfile', help='file to save region secrets to', required=True)
+    # Initialize Argument Parser
+    parser = ArgumentParser(description='Generates json encoded file containing regions and region IDs')
+
+    # Add --region-list argument to store an arbitrary number of regions
+    parser.add_argument('--region-list', nargs='+',
+                        help='List of regions for provisioning purposes',
+                        required=True)
+
+    # Add --outfile argument to store a single output filepath
+    parser.add_argument('--outfile', nargs=1,
+                        help='Location to save user secrets file',
+                        required=True)
+
+    # Call to parse arguments
     args = parser.parse_args()
+
     return args.region_list, args.outfile
 
-"""
-Description: randomizes the id of a region into 8 digit, alpha-numeruc characters based on CHARACTERLIST
-
-:return: Returns an 8-digit, randomized string.
-"""
-
-def random_id_generator():
-    RegionIdList = []
-    run = True
-    while(run):
-        randomized_id = CHARACTERLIST[randint(0, len(CHARACTERLIST) - 1)] #initialization of randmized_id with with CHARACTERLIST
-
-        index = 1
-        while(index < 8):
-            randomized_id = randomized_id + CHARACTERLIST[randint(0, len(CHARACTERLIST) - 1)]
-            index += 1
-        
-        if(not(len(RegionIdList) == 0)): 
-            for x in RegionIdList:
-
-                if(randomized_id == x): #ensures that the newly randomly generated id does not already exist, re-does randomization if so
-                    break;
-
-                elif(x == RegionIdList[len(RegionIdList) - 1]):
-                    run = False
-                    break;
-        
-        else:
-            run = False
-        
-    RegionIdList.append(randomized_id)
-    return randomized_id
-
+  
+  
+# Treats script as a standalone and does
 if __name__ == '__main__':
+
+    # Parse inputs and store them as variables
     region_list, outfile = get_args()
-    print("generating system specific secrets")
-    regions = {region: random_id_generator() for region, region in enumerate(region_list)} #Creates random region ID dictionary
-    main(regions, outfile)
+
+    # Branding
+    print("""MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMN00NMMWX0KWMMMMMMWX0KWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWd..dWMK: 'OMMMMMMK; ,0MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMNc  cNM0' .xWMMMMM0' .kMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMNc  cNM0' .xMMMMMM0' .kMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMNc  cNM0' .xMMMMMM0' .kMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMNc  cNM0' .xMMMMMMO' .kMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMNc  cNMX;  lXNMMMWx. 'OMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMNc  cNMWk. .';odoc. .oNMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWk,,kWMMW0o:,'...';lOWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMNNWMMMMMMWWNNXNNWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMNOxooodkKWMMMXxd0WMMMMMXxdKWMMMMN0kdooodkKWMMMW0dxXMMMMWKddKWMMMN0xooodkKWMMMMMMMM
+MMMMMMNx'..,;,. .lXMWd. :XMMMMWd. :XMMNx;...','. .:OWMX; .xMMWKo. .xWMWk,..,;;. .lXMMMMMMM
+MMMMMM0' .xWWWKc.'OMWd  ;KMMMMWo  ;XMXc  ,xXNWNKd. .OMK, .dWXo. .:OWMM0' .xNWWKc..kMMMMMMM
+MMMMMMX:  'coxO0O0WMWd  ;KMMMMWo  ;XWx. 'OMMMMMMW0ooKMK,  co'  ;OWMMMMXc  'coxO0O0NMMMMMMM
+MMMMMMMXxc'.. ..,oKMWd  ;KMMMMWo  ;XWl  ;XMMMMMMMMMMMMK,       .xNMMMMMXxc,..  .,oKWMMMMMM
+MMMMMMXkkXNX0ko'  :XWd  ,KMMMMWo  :XWd. ,KMMMMMMM0loKMK,  .lOd. .lXMMMNkkXNX0ko,  ;KMMMMMM
+MMMMMMk. :KWMMNo. ,KMO. .dNMMW0,  lNMK;  cKWMMMNk, .kMK,  oWMWO,  ,OWMk. :KWMMWd. '0MMMMMM
+MMMMMMXo. .:cc;. 'kWMNd. .'::;. .cKMMMKl. .,:::'. 'xNMK; .dWMMMKc  .kMXo. .:cc;. 'xWMMMMMM
+MMMMMMMWKxlc::cokXMMMMWKxoc:::ld0WMMMMMWKxlc:::cokXWMMWkcoKMMMMMNxcl0MMWKxlc::cokXWMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+    """)
+
+    # Print status message
+    print("\n" + "Generating region speific secrets" + "\n\n")
+
+    main(region_list, outfile)

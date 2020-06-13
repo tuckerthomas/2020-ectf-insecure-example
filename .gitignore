@@ -1,5 +1,8 @@
+# Prevent bootloader
 BOOT.bin
 BOOT
+
+# compile c files/other c files
 *.elf
 *.o
 *.bif
@@ -8,9 +11,34 @@ BOOT
 *.wav
 *.drm
 *.vagrant
+
+# Microblaze debug files
+mb/Cora-Z7-07S/ps7_init.c
+mb/Cora-Z7-07S/ps7_init.h
+mb/Cora-Z7-07S/ps7_init.html
+mb/Cora-Z7-07S/ps7_init.tcl
+mb/Cora-Z7-07S/ps7_init_gpl.c
+mb/Cora-Z7-07S/ps7_init_gpl.h
+
+# vscode config folder
 .vscode/
 
-# C Project Debug
-miPod/Debug
-mb/drm_audio_fw/Debug
+# MacOS
 .DS_Store
+
+# Eclipse leftovers/Debug folders
+miPod/Debug
+miPod/.settings
+mb/miPod/Debug
+mb/drm_audio_fw/Debug
+
+# Xilinx leftovers
+*.jou
+*.log
+
+# Secret sauce 
+mb/drm_audio_fw/src/secrets.h
+tools/device
+keys.json
+*.bin
+Xilinx_Vivado_SDK_2017.4_1216_1.tar.gz

@@ -8,21 +8,17 @@
 #ifndef SRC_MIPOD_H_
 #define SRC_MIPOD_H_
 
-#import <stdint.h>
 
 // miPod constants
 #define USR_CMD_SZ 64
 
 // protocol constants
-#define MAX_REGIONS 32
-#define REGION_NAME_SZ 16
+#define MAX_REGIONS 64
+#define REGION_NAME_SZ 64
 #define MAX_USERS 64
-#define USERNAME_SZ 16
-#define MAX_PIN_SZ 8
+#define USERNAME_SZ 64
+#define MAX_PIN_SZ 64
 #define MAX_SONG_SZ (1<<25)
-
-#define HASHPIN_SZ 32
-#define SALT_SZ 7
 
 // printing utility
 #define MP_PROMPT "MP> "
@@ -32,44 +28,28 @@
 #define print_prompt() printf(USER_PROMPT, "")
 #define print_prompt_msg(...) printf(USER_PROMPT, __VA_ARGS__)
 
+#define RID_SZ 8
+#define UID_SZ 8
+
+#define MAX_METADATA_SZ UID_SZ + (RID_SZ * MAX_REGIONS) + (MAX_USERS * UID_SZ)
+
+#define CHUNK_TIME_SEC 5
 #define AUDIO_SAMPLING_RATE 48000
 #define BYTES_PER_SAMP 2
 #define NONCE_SIZE 12
-#define MAC_SIZE 16
 #define WAVE_HEADER_SZ 44
-#define METADATA_SZ 390
-#define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + NONCE_SIZE + MAC_SIZE
-#define ENC_METADATA_SZ METADATA_SZ + NONCE_SIZE + MAC_SIZE
 #define META_DATA_ALLOC 4
-#define SONG_CHUNK_SZ 16000
-#define ENC_BUFFER_SZ 60
-#define SHA_256_SUM_SZ 32
+#define SONG_CHUNK_SZ 48000
+#define SONG_CHUNK_RAM 1000
+#define ENC_WAVE_HEADER_SZ WAVE_HEADER_SZ + META_DATA_ALLOC
+#define MAC_SIZE 16
 
-// structs to import secrets.h JSON data into memory
-typedef struct {
-    uint32_t uid;
-    char username[USERNAME_SZ];
-    char hashedPin[HASHPIN_SZ];
-    char salt[SALT_SZ];
-} user_struct;
-
-typedef struct {
-    uint32_t regionID;
-    char regionName[REGION_NAME_SZ];
-} region_struct;
-
-typedef struct {
-    uint32_t provisioned_userID;
-} provisioned_user_struct;
-
-typedef struct {
-    uint32_t provisioned_regionID;
-} provisioned_region_struct;
+#define ENC_BUFFER_SZ 120
 
 // struct to interpret shared buffer as a query
 typedef struct {
-	uint32_t num_regions;
-	uint32_t num_users;
+    int num_regions;
+    int num_users;
     char owner[USERNAME_SZ];
     char regions[MAX_REGIONS * REGION_NAME_SZ];
     char users[MAX_USERS * USERNAME_SZ];
@@ -79,18 +59,30 @@ typedef struct {
 #define q_region_lookup(q, i) (q.regions + (i * REGION_NAME_SZ))
 #define q_user_lookup(q, i) (q.users + (i * USERNAME_SZ))
 
-typedef struct __attribute__ ((__packed__)) {
-	unsigned char sha256sum[SHA_256_SUM_SZ];
-    uint32_t owner_id;
-    uint8_t num_regions;
-    uint8_t num_users;
-    uint32_t provisioned_regions[MAX_REGIONS];
-    uint32_t provisioned_users[MAX_USERS];
-} purdue_md;
+
+// struct to interpret drm metadata
+typedef struct __attribute__((__packed__)) {
+    char md_size;
+    char owner_id;
+    char num_regions;
+    char num_users;
+    char buf[];
+} drm_md;
+
+
+// struct to interpret shared buffer as a drm song file
+// packing values skip over non-relevant WAV metadata
+typedef struct __attribute__((__packed__)) {
+    char packing1[4];
+    int file_size;
+    char packing2[32];
+    int wav_size;
+    drm_md md;
+} songStruct;
 
 typedef struct __attribute__ ((__packed__)) {
 	unsigned char wav_header[WAVE_HEADER_SZ];
-	uint32_t metadata_size;
+	unsigned int metadata_size;
 } waveHeaderStruct;
 
 typedef struct __attribute__ ((__packed__)) {
@@ -102,7 +94,7 @@ typedef struct __attribute__ ((__packed__)) {
 typedef struct __attribute__ ((__packed__)) {
 	unsigned char nonce[NONCE_SIZE];
 	unsigned char tag[MAC_SIZE];
-	unsigned char metadata[METADATA_SZ];
+	unsigned char metadata[];
 } encryptedMetadata;
 
 #define get_metadata(m) ((unsigned char *)&m + NONCE_SIZE + MAC_SIZE)
@@ -120,10 +112,10 @@ typedef struct __attribute__ ((__packed__)) {
 #define get_drm_uids(d) (d.md.buf + d.md.num_regions)
 #define get_drm_song(d) ((char *)(&d.md) + d.md.md_size)
 
-// TODO: Remove deprecated commands
+
 // shared buffer values
-enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, PLAY_SONG, READ_HEADER, READ_METADATA, WAIT_FOR_CHUNK, READ_CHUNK, ENC_SHARE, QUERY_ENC_SONG };
-enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_FILE_HEADER, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
+enum commands { QUERY_PLAYER, QUERY_SONG, LOGIN, LOGOUT, SHARE, PLAY, STOP, DIGITAL_OUT, PAUSE, RESTART, FF, RW, READ_HEADER, READ_METADATA, READ_CHUNK };
+enum states   { STOPPED, WORKING, PLAYING, PAUSED, WAITING_METADATA, WAITING_CHUNK, READING_CHUNK };
 
 
 // struct to interpret shared command channel
@@ -131,28 +123,24 @@ typedef volatile struct __attribute__((__packed__)) {
     char cmd;                   // from commands enum
     char drm_state;             // from states enum
     char login_status;          // 0 = logged off, 1 = logged on
+    char padding;               // not used
     char username[USERNAME_SZ]; // stores logged in or attempted username
     char pin[MAX_PIN_SZ];       // stores logged in or attempted pin
-    uint8_t share_rejected;		// tells mipod if the share was rejected or not
-    uint32_t metadata_size;		// stores size of the metadata
-    uint32_t total_chunks;		// stores the total chunks to be decrypted
-    uint32_t chunk_size;		// stores dynamic chunk size
-    uint32_t chunk_nums;
-    uint32_t chunk_remainder;
-    uint32_t buffer_offset;		// Determines if reading/writing to buffer
-    unsigned char wav_header[WAVE_HEADER_SZ];
-    unsigned char songBuffer[ENC_BUFFER_SZ * SONG_CHUNK_SZ];
+    int metadata_size;
+    int total_chunks;
+    int chunk_size;
+    int chunk_nums;
+    int chunk_remainder;
+    unsigned int buffer_offset;
 
     // shared buffer is either a drm song or a query
     union {
-    	// Non-encrypted
+        songStruct song;
         queryStruct query;
-
-        // Encrypted
         encryptedWaveheader encWaveHeader;
         encryptedMetadata encMetadata;
         encryptedSongChunk encSongChunk;
-        encryptedSongChunk encSongBuffer[ENC_BUFFER_SZ];
+        encryptedSongChunk encSongBuffer[60];
         char buf[MAX_SONG_SZ]; // sets correct size of cmd_channel for allocation
     };
 } cmd_channel;

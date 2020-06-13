@@ -3,87 +3,227 @@
 Description: Creates device specific secrets
 Use: Once per device
 """
-import os
-import json
-from argparse import ArgumentParser
+
+from os import mkdir, path              # For file creation and manipulation
+from json import load, dumps            # For working with JSON data
+from argparse import ArgumentParser     # Parse through arguments passed through the terminal
+from secrets import token_hex           # Alows for generating random hex characters
 
 
 
-def main(region_names, user_names, user_secrets, region_secrets, device_dir):
-    file_name = "device_secrets"
+"""
+Description decrypts song 
+    Args:
+        region_names: the names of regions passed through the terminal
+        user_names: names of users passed through the terminal
+        user_secrets: path to user_secrets file
+        region_secrets: path to region secrets file
+        device_dir: directory to device
 
-    # create device directory
-    try:
-        os.mkdir(device_dir)
-    except Exception as e:
-        print("Could not create directory {device_dir}: {e}".format(device_dir=device_dir, e=e))
-        return
+    Returns:
+        Writes data to device secrets file
+"""
+def main(valid_regions, valid_users, user_secrets, region_secrets, device_dir):
+    
+    # TotalUsers counter
+    totalUsers = 0
 
-    # create device secrets file
-    try:
-        device_secrets = open(os.path.join(device_dir, file_name), "w")
-    except Exception as e:
-        print("Unable to open secrets file: {e}".format(e=e))
-        return
+    # TotalRegions counter
+    totalRegions = 0
 
-    # check for valid region names
-    try:
-        rids = [str(region_secrets[r]) for r in region_names]
-    except Exception as e:
-        print("Unable to create secrets file: {e} "
-              "Please ensure all regions entered are in the list: {user_secrets}".format(e=e, user_secrets=user_secrets.keys()))
-        return
+    # ValidUsers counter
+    validUsers = 0
 
-    # check for valid user names
-    try:
-        uids = [str(user_secrets[u]['id']) for u in usernames]
-    except Exception as e:
-        print("Unable to create secrets file: {e} "
-              "Please ensure all regions entered are in the list: {user_secrets}".format(e=e, user_secrets=user_secrets.keys()))
-        return
+    # ValidRegions counter
+    validRegions = 0
 
-    # write secrets
-    device_secrets.write(f'''
-#ifndef SECRETS_H
+    # String Array of all users 
+    allUsersArray = "{"
+
+    # String Array of all regions
+    allRegionsArray = "{"
+
+    # String Array of all Valid users
+    validUsersArray = "{"
+
+    # String Array of all valid regions
+    validRegionsArray = "{"
+
+    # Remove invalid users from dictionary of all users and regions and tabulate total and valid users
+    for user in user_secrets:
+
+        # Adds userId to allUsersArray  Example: "{1234, ""
+        allUsersArray += "{" + user["userID"] + ", "
+
+        # Adds userName to allUsersArray  Example: '"user1", '
+        allUsersArray += "\"" + user["userName"] + "\", "
+
+        # Adds hashedPin to allUsersArray  Example: '"dfihfuhdsfuishfdsjfpok", ' 
+        allUsersArray += "\"" + user["hashedPin"] + "\", "
+
+        # Adds salt to allUsersArray  Example: '"abcdef"}, '
+        allUsersArray += "\"" + user["salt"] + "\"}, "
+
+        # Increments total users by one
+        totalUsers += 1
+
+        # Checks if the user name is in the valid_users array
+        if user['userName'] in valid_users:
+
+            # Increments valid users by one
+            validUsers = validUsers + 1
+
+            # Adds the userID to the validUsersArray  Example: '{0x12345}, '
+            validUsersArray = validUsersArray + "{" + user["userID"] + "}, "
+
+    # Removes a comma and a space from the last two positions in the allUsersArray and adds a '}'
+    allUsersArray = allUsersArray[0:len(allUsersArray) - 2] + "}"
+
+    # Removes a comma and a space from the last two postions in the validUsersArray and adds a '}'
+    validUsersArray = validUsersArray[0:len(validUsersArray) - 2] + "}"
+    
+    # Adds regions to the allRegionsArray
+    for region in region_secrets:
+
+        # Adds regionID to allRegionsArray  Example: '{0x123456, '
+        allRegionsArray += "{" + region["regionID"] + ", "
+
+        # Adds regionName to allRegionsArray  Example: 'Japan"},'
+        allRegionsArray += "\"" + str(region["regionName"]) + "\"}, "
+
+        # Increments totalRegions by 1
+        totalRegions = totalRegions + 1
+
+        # Checks if the region name is in the valid_regions array
+        if region['regionName'] in valid_regions:
+
+            # Increments validRegions by one
+            validRegions = validRegions + 1
+
+            # Adds the RegionID to the validRegionsArray  Example: '{0x12345}, '
+            validRegionsArray = validRegionsArray + "{" + region["regionID"] + "}, "
+
+    # Removes a comma and a space from the last two positions in the allUsersArray and adds a '}'
+    allRegionsArray = allRegionsArray[0:len(allRegionsArray) - 2] + "}" 
+
+    # Removes a comma and a space from the last two positions in the allUsersArray and adds a '}'
+    validRegionsArray = validRegionsArray[0:len(validRegionsArray) - 2] + "}" 
+
+    # Create device specific key
+    device_key = token_hex(32)
+
+    # Add Device key to the key dictionary
+    deviceKeyDict = {"key": device_key}
+
+    # Dump deviceKeyDict to json_device_key
+    jsonDeviceKey = dumps(deviceKeyDict)
+
+    # Write json_device_key 
+    with open("keys.json", mode="w") as jsonkeys:
+        jsonkeys.write(jsonDeviceKey)
+
+    # Check if Device Directory Exists
+    if not path.isdir(device_dir[0]):
+
+        # Make device driectory
+        mkdir(device_dir[0])
+
+    # Make output file path
+    outfile = path.join(device_dir[0], "device_secrets")
+
+    # Open device_secrets file and write data to it
+    with open(outfile, mode="w") as header:
+        header.write("""#ifndef SECRETS_H
 #define SECRETS_H
 
-#define NUM_REGIONS {len(region_secrets)}
-const char *REGION_NAMES[] = {{ {", ".join(['"' + r + '"' for r in region_secrets])} }};
-const char *REGION_IDS[] = {{ {", ".join(['"' + r + '"' for r in region_secrets.values()])} }};
+// Device Specific Key
+const char *KEY_HEX = "{device_key}";
 
-#define NUM_PROVISIONED_REGIONS {len(region_names)}
-const char *PROVISIONED_RIDS[] = {{ {", ".join(['"' + r + '"' for r in rids])} }};
+const int NUM_REGIONS = {totalRegions};
+const int NUM_USERS = {totalUsers};
+const int NUM_PROVISIONED_REGIONS = {validRegions};
+const int NUM_PROVISIONED_USERS = {validUsers};
 
-#define NUM_USERS {len(user_secrets)}
-const char *USERNAMES[] = {{ {", ".join(['"' + u + '"' for u in user_secrets])} }};
-const u8 USER_IDS[] = {{ {", ".join([str(user_secrets[u]['id']) for u in user_names])} }};
-
-#define NUM_PROVISIONED_USERS {len(user_names)}
-const u8 PROVISIONED_UIDS[] = {{ {", ".join(uids)} }};
-const char *PROVISIONED_PINS[] = {{ {", ".join(['"' + user_secrets[u]['pin'] + '"' for u in user_names])} }};
+const region_struct device_regions[] = {allRegionsArray};
+const user_struct device_users[] = {allUsersArray};
+const provisioned_region_struct provisioned_rid[] = {validRegionsArray};
+const provisioned_user_struct provisioned_uid[] = {validUsersArray};
 
 #endif // SECRETS_H
-''')
+""".format(device_key=device_key, totalRegions=totalRegions, totalUsers=totalUsers, 
+validRegions=validRegions, validUsers=validUsers, allRegionsArray=allRegionsArray, 
+allUsersArray=allUsersArray, validRegionsArray=validRegionsArray, validUsersArray=validUsersArray))
 
 
+
+"""
+Description Gets arguments from the command line
+Returns:
+    arguments passed through the command-line including:
+    user-defined region list, region_secrets json directory, user-defined users list, 
+    user_secrets json directory, and the device directory
+"""
 def get_args():
-    """gets arguments from command line"""
-    parser = ArgumentParser(description='main interface to provision system')
-    parser.add_argument('--region-list', nargs='+', help='Regions the player is provisioned for.', required=True)
-    parser.add_argument('--region-secrets-path', help='Path to region secrets file.', required=True)
-    parser.add_argument('--user-list', help='List of users seperated by a space to provision the device for.',
-                        nargs='+', required=True)
-    parser.add_argument('--user-secrets-path', help='Path to user secrets file generated in createUsers.py',
-                        required=True)
-    parser.add_argument('--device-dir', help='Path to output any required information for the device.',
-                        required=True)
+
+    # Initialize Argument Parser
+    parser = ArgumentParser(description='Generate device ')
+
+    # Add --region-list argument to store an arbitrary number valid regions
+    parser.add_argument('--region-list', nargs='+',
+                        help='Regions the player is provisioned for.', required=True)
+
+    # Add --region-secrets-path argument to store the path to the region_secrets file
+    parser.add_argument('--region-secrets-path', nargs=1,
+                         help='Path to region secrets file.', required=True)
+
+    # Add --user-list argument to store an arbitrary number valid users
+    parser.add_argument('--user-list', nargs='+',
+                        help='List of users seperated by a space to provision the device for.', required=True)
+
+    # Add --user-secrets-path argument to store the path to the user_secrets file
+    parser.add_argument('--user-secrets-path', nargs=1,
+                        help='Path to user secrets file generated in createUsers.py', required=True)
+
+    # Add --device-dir argument to store the path to the device_dir directory
+    parser.add_argument('--device-dir', nargs=1,
+                        help='Path to output any required information for the device.', required=True)
+
+    # Call to parse arguments
     args = parser.parse_args()
+
+    # Returns arguments from the command line
     return args.region_list, args.region_secrets_path, args.user_list, args.user_secrets_path, args.device_dir
+      
 
 
+# Treat as a standalone script
 if __name__ == '__main__':
-    region_names, region_secrets, usernames, user_secrets, device_dir = get_args()
-    print("generating device specific secrets")
-    user_secrets = json.load(open(os.path.abspath(user_secrets)))
-    region_secrets = json.load(open(os.path.abspath(region_secrets)))
-    main(region_names, usernames, user_secrets, region_secrets, device_dir)
+
+    # Parse inputs and store them as variables
+    valid_regions, region_secrets, valid_users, user_secrets, device_dir = get_args()
+
+    # Branding
+    print("""
+    ________▄▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▄______
+    _______█░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░░█_____
+    _______█░▒▒▒▒▒▒▒▒▒▒▄▀▀▄▒▒▒░░█▄▀▀▄_
+    __▄▄___█░▒▒▒▒▒▒▒▒▒▒█▓▓▓▀▄▄▄▄▀▓▓▓█_
+    █▓▓█▄▄█░▒▒▒▒▒▒▒▒▒▄▀▓▓▓▓▓▓▓▓▓▓▓▓▀▄_
+    _▀▄▄▓▓█░▒▒▒▒▒▒▒▒▒█▓▓▓▄█▓▓▓▄▓▄█▓▓█_
+    _____▀▀█░▒▒▒▒▒▒▒▒▒█▓▒▒▓▄▓▓▄▓▓▄▓▒▒█
+    ______▄█░░▒▒▒▒▒▒▒▒▒▀▄▓▓▀▀▀▀▀▀▀▓▄▀_
+    ____▄▀▓▀█▄▄▄▄▄▄▄▄▄▄▄▄██████▀█▀▀___
+    ____█▄▄▀_█▄▄▀_______█▄▄▀_▀▄▄█_____
+    """)
+
+    # Print status message
+    print("\n" + "Generating device specific secrets." + "\n\n")
+
+    # Parse the contents of user_secrets as JSON data and store
+    user_secrets = load(open(path.abspath(str(user_secrets[0]))))
+
+    # Parse the contents of region_secrets as JSON data and store
+    region_secrets = load(open(path.abspath(str(region_secrets[0]))))
+    
+    # Start Main function
+    main(valid_regions, valid_users, user_secrets, region_secrets, device_dir)

@@ -1,9 +1,11 @@
-/*
- * eCTF Collegiate 2020 MicroBlaze Example Code
+ /*
+  * eCTF Collegiate 2020 MicroBlaze Example Code
  * Audio Digital Rights Management
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "platform.h"
 #include "xparameters.h"
 #include "xil_exception.h"
@@ -16,10 +18,13 @@
 #include "constants.h"
 #include "sleep.h"
 
-#include "song_util.h"
+// Bearssl Library
+#include <bearssl_hash.h>
+
+// Chacha20+poly1305 implementation
+#include "chachapoly/chachapoly.h"
 
 //////////////////////// GLOBALS ////////////////////////
-
 
 // audio DMA access
 static XAxiDma sAxiDma;
@@ -31,22 +36,27 @@ const struct color YELLOW = {0x01ff, 0x01ff, 0x0000};
 const struct color GREEN =  {0x0000, 0x01ff, 0x0000};
 const struct color BLUE =   {0x0000, 0x0000, 0x01ff};
 
-// change states
-#define change_state(state, color) c->drm_state = state; setLED(led, color);
+// DRM States and Colors associated with them
+#define change_state(state, color) c->drm_state = state; s.drm_state = state; setLED(led, color);
 #define set_stopped() change_state(STOPPED, RED)
 #define set_working() change_state(WORKING, YELLOW)
 #define set_playing() change_state(PLAYING, GREEN)
 #define set_paused()  change_state(PAUSED, BLUE)
+#define set_waiting_file_header() change_state(WAITING_FILE_HEADER, YELLOW)
+#define set_waiting_metadata() change_state(WAITING_METADATA, YELLOW)
+#define set_waiting_chunk() change_state(WAITING_CHUNK, YELLOW)
+#define set_reading_chunk() change_state(READING_CHUNK, GREEN)
 
-// shared command channel -- read/write for both PS and PL
+// shared command channel between microblaze and linux
 volatile cmd_channel *c = (cmd_channel*)SHARED_DDR_BASE;
 
 // internal state store
-internal_state s;
+static internal_state s;
 
+// Large chunk buffer
+static unsigned char chunk_buffer[SONG_CHUNK_SZ];
 
 //////////////////////// INTERRUPT HANDLING ////////////////////////
-
 
 // shared variable between main thread and interrupt processing thread
 volatile static int InterruptProcessed = FALSE;
@@ -59,11 +69,10 @@ void myISR(void) {
 
 //////////////////////// UTILITY FUNCTIONS ////////////////////////
 
-
 // returns whether an rid has been provisioned
-int is_provisioned_rid(char rid) {
+int is_provisioned_rid(u32 rid) {
     for (int i = 0; i < NUM_PROVISIONED_REGIONS; i++) {
-        if (rid == PROVISIONED_RIDS[i]) {
+        if (rid == provisioned_rid[i].provisioned_regionID) {
             return TRUE;
         }
     }
@@ -71,11 +80,11 @@ int is_provisioned_rid(char rid) {
 }
 
 // looks up the region name corresponding to the rid
-int rid_to_region_name(char rid, char **region_name, int provisioned_only) {
+int rid_to_region_name(u32 rid, char **region_name, int provisioned_only) {
     for (int i = 0; i < NUM_REGIONS; i++) {
-        if (rid == REGION_IDS[i] &&
+        if (rid == device_regions[i].regionID &&
             (!provisioned_only || is_provisioned_rid(rid))) {
-            *region_name = (char *)REGION_NAMES[i];
+            *region_name = (char *)device_regions[i].regionName;
             return TRUE;
         }
     }
@@ -89,9 +98,9 @@ int rid_to_region_name(char rid, char **region_name, int provisioned_only) {
 // looks up the rid corresponding to the region name
 int region_name_to_rid(char *region_name, char *rid, int provisioned_only) {
     for (int i = 0; i < NUM_REGIONS; i++) {
-        if (!strcmp(region_name, REGION_NAMES[i]) &&
-            (!provisioned_only || is_provisioned_rid(REGION_IDS[i]))) {
-            *rid = REGION_IDS[i];
+        if (!strcmp(region_name, device_regions[i].regionName) &&
+            (!provisioned_only || is_provisioned_rid(device_regions[i].regionID))) {
+            *rid = device_regions[i].regionID;
             return TRUE;
         }
     }
@@ -103,9 +112,9 @@ int region_name_to_rid(char *region_name, char *rid, int provisioned_only) {
 
 
 // returns whether a uid has been provisioned
-int is_provisioned_uid(char uid) {
+int is_provisioned_uid(u32 uid) {
     for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {
-        if (uid == PROVISIONED_UIDS[i]) {
+        if (uid == provisioned_uid[i].provisioned_userID) {
             return TRUE;
         }
     }
@@ -114,11 +123,11 @@ int is_provisioned_uid(char uid) {
 
 
 // looks up the username corresponding to the uid
-int uid_to_username(char uid, char **username, int provisioned_only) {
+int uid_to_username(u32 uid, char **username, int provisioned_only) {
     for (int i = 0; i < NUM_USERS; i++) {
-        if (uid == USER_IDS[i] &&
+        if (uid == device_users[i].uid &&
             (!provisioned_only || is_provisioned_uid(uid))) {
-            *username = (char *)USERNAMES[i];
+            *username = (char *)device_users[i].username;
             return TRUE;
         }
     }
@@ -130,11 +139,11 @@ int uid_to_username(char uid, char **username, int provisioned_only) {
 
 
 // looks up the uid corresponding to the username
-int username_to_uid(char *username, char *uid, int provisioned_only) {
+int username_to_uid(char *username, u32 *uid, int provisioned_only) {
     for (int i = 0; i < NUM_USERS; i++) {
-        if (!strcmp(username, USERNAMES[USER_IDS[i]]) &&
-            (!provisioned_only || is_provisioned_uid(USER_IDS[i]))) {
-            *uid = USER_IDS[i];
+        if (!strncmp(username, device_users[i].username, strlen(device_users[i].username)) &&
+            (!provisioned_only || is_provisioned_uid(device_users[i].uid))) {
+            *uid = device_users[i].uid;
             return TRUE;
         }
     }
@@ -144,85 +153,177 @@ int username_to_uid(char *username, char *uid, int provisioned_only) {
     return FALSE;
 }
 
+// Converts hex string to binary array
+static size_t hextobin(unsigned char *dst, const char *src) {
+	size_t num;
+	unsigned acc;
+	int z;
 
-// loads the song metadata in the shared buffer into the local struct
-void load_song_md() {
-    s.song_md.md_size = c->song.md.md_size;
-    s.song_md.owner_id = c->song.md.owner_id;
-    s.song_md.num_regions = c->song.md.num_regions;
-    s.song_md.num_users = c->song.md.num_users;
-    memcpy(s.song_md.rids, (void *)get_drm_rids(c->song), s.song_md.num_regions);
-    memcpy(s.song_md.uids, (void *)get_drm_uids(c->song), s.song_md.num_users);
+	num = 0;
+	z = 0;
+	acc = 0;
+	while (*src != 0) {
+		int c = *src++;
+		if (c >= '0' && c <= '9') {
+			c -= '0';
+		} else if (c >= 'A' && c <= 'F') {
+			c -= ('A' - 10);
+		} else if (c >= 'a' && c <= 'f') {
+			c -= ('a' - 10);
+		} else {
+			continue;
+		}
+		if (z) {
+			*dst++ = (acc << 4) + c;
+			num++;
+		} else {
+			acc = c;
+		}
+		z = !z;
+	}
+	return num;
+}
+
+// Hashes a given pin and stores it into the buffer
+void hash_pin(const char *pin, const char *salt, unsigned char *hashpinBuffer) {
+	char concatPin[MAX_PIN_SZ + SALT_SZ];
+	memset(concatPin, 0, sizeof(concatPin));
+
+	strncpy(concatPin, pin, strlen(pin));
+	strncat(concatPin, salt, strlen(salt));
+
+    br_sha256_context ctx;
+
+    br_sha256_init(&ctx);
+
+    br_sha256_update(&ctx, concatPin, strlen(concatPin));
+
+    br_sha256_out(&ctx, hashpinBuffer);
+}
+
+// Validates a given encrypted waveHeader
+unsigned int read_header(struct chachapoly_ctx *ctx, waveHeaderMetaStruct *waveHeaderMeta) {
+	unsigned char nonce[NONCE_SIZE];
+	unsigned char tag[MAC_SIZE];
+	unsigned char aad[12] = "wave_header";
+
+	//set_working();
+
+	memcpy(nonce, (void *)&(c->encWaveHeaderMeta.nonce), NONCE_SIZE);
+	memcpy(tag, (void *)&(c->encWaveHeaderMeta.tag), MAC_SIZE);
+
+	int ret = chachapoly_crypt(ctx, nonce, &aad, sizeof(aad), (waveHeaderMetaStruct *) &c->encWaveHeaderMeta.wave_header_meta, sizeof(waveHeaderMetaStruct), waveHeaderMeta, tag, MAC_SIZE, 0);
+
+	if (ret == CHACHAPOLY_OK) {
+		mb_printf("File header validated\r\n");
+
+		s.total_bytes_to_play = waveHeaderMeta->wave_header.wav_size;
+
+		return waveHeaderMeta->metadata_size;
+	} else {
+		mb_printf("Header modification detected!\r\n");
+		set_stopped();
+		return -1;
+	}
+
+	return 1;
+}
+
+// Validates a given metadata
+int read_metadata(struct chachapoly_ctx *ctx, encryptedMetadata *metadata) {
+	unsigned char nonce[NONCE_SIZE];
+	unsigned char tag[MAC_SIZE];
+	unsigned char aad[10] = "meta_data";
+	unsigned char metadata_buffer[METADATA_SZ];
+
+	memcpy(nonce, (unsigned char *)&(c->encMetadata.nonce), NONCE_SIZE);
+	memcpy(tag, (unsigned char *)&(c->encMetadata.tag), MAC_SIZE);
+
+	int ret = chachapoly_crypt(ctx, nonce, &aad, sizeof(aad), (unsigned char *) &(c->encMetadata.metadata), METADATA_SZ, metadata_buffer, tag, MAC_SIZE, 0);
+
+	if (ret == CHACHAPOLY_OK) {
+		mb_printf("Metadata validated\r\n");
+		// Copy metadata into local state
+		memcpy(&s.purdue_md, metadata_buffer, METADATA_SZ);
+		return 0;
+	} else {
+		mb_printf("Metadata modification detected!\r\n");
+		set_stopped();
+		return -1;
+	}
+	return 1;
+}
+
+// Read a chunk of specific size and number, decrypt and copy into the FIFO buffer
+int read_chunks(struct chachapoly_ctx *ctx, unsigned char *chunk_buffer, unsigned char *sha256sum, int chunk_size, int chunk_num, int buffer_loc) {
+	unsigned char nonce[NONCE_SIZE];
+	unsigned char tag[MAC_SIZE];
+	int aad = chunk_num;
+
+	// Copy data to buffers
+	memcpy(nonce, (unsigned char *) &c->encSongBuffer[buffer_loc].nonce, NONCE_SIZE);
+	memcpy(tag, (unsigned char *) &c->encSongBuffer[buffer_loc].tag, MAC_SIZE);
+
+	// Decrypt the chunk
+	int ret = chachapoly_crypt(ctx, nonce, sha256sum, SHA_256_SUM_SZ, (unsigned char *)&c->encSongBuffer[buffer_loc].data, chunk_size, chunk_buffer, tag, MAC_SIZE, 0);
+
+	if (ret == CHACHAPOLY_OK) {
+		return 0;
+	} else {
+		mb_printf("The tags are not the same :( \r\n");
+		mb_printf("Chunk %i failed", chunk_num);
+		mb_printf("Modification detected!\r\n");
+		set_stopped();
+		return -1;
+	}
+
+	return 1;
+}
+
+// Toggle the offset for the chunk buffer
+int toggle_offset(int offset) {
+	if (!offset) {
+		offset = 1;
+	} else {
+		offset = 0;
+	}
+
+	return offset;
 }
 
 
-// checks if the song loaded into the shared buffer is locked for the current user
-int is_locked() {
-    int locked = TRUE;
+// Calculate metadata hash, encrypt metadta and store into metadata buffer
+void encryptMetaData(struct chachapoly_ctx *cha_ctx, char *metadata, encryptedMetadata *enc_metadata) {
+	char nonce[NONCE_SIZE];
+	char aad[] = "meta_data";
+	char tag_buffer[MAC_SIZE];
+    
+	// Start nonce calculation
+    br_sha256_context ctx;
 
-    // check for authorized user
-    if (!s.logged_in) {
-        mb_printf("No user logged in");
-    } else {
-        load_song_md();
+    br_sha256_init(&ctx);
 
-        // check if user is authorized to play song
-        if (s.uid == s.song_md.owner_id) {
-            locked = FALSE;
-        } else {
-            for (int i = 0; i < NUM_PROVISIONED_USERS && locked; i++) {
-                if (s.uid == s.song_md.uids[i]) {
-                    locked = FALSE;
-                }
-            }
-        }
+    // Calculate sha256 hash
+    br_sha256_update(&ctx, metadata, METADATA_SZ);
+    char sha_compute[br_sha256_SIZE];
+    br_sha256_out(&ctx, sha_compute);
 
-        if (locked) {
-            mb_printf("User '%s' does not have access to this song", s.username);
-            return locked;
-        }
-        mb_printf("User '%s' has access to this song", s.username);
-        locked = TRUE; // reset lock for region check
+    // Pull the first 12 bytes for the nonce
+    memcpy(nonce, sha_compute, NONCE_SIZE);
 
-        // search for region match
-        for (int i = 0; i < s.song_md.num_regions; i++) {
-            for (int j = 0; j < (u8)NUM_PROVISIONED_REGIONS; j++) {
-                if (PROVISIONED_RIDS[j] == s.song_md.rids[i]) {
-                    locked = FALSE;
-                }
-            }
-        }
+    // Encrypt the metadata
+	chachapoly_crypt(cha_ctx, nonce, &aad, sizeof(aad), metadata, METADATA_SZ, enc_metadata->metadata, tag_buffer, MAC_SIZE, 1);
 
-        if (!locked) {
-            mb_printf("Region Match. Full Song can be played. Unlocking...");
-        } else {
-            mb_printf("Invalid region");
-        }
-    }
-    return locked;
+	// Copy encrypted metadata to the command buffer
+	memcpy(enc_metadata->nonce, nonce, NONCE_SIZE);
+	memcpy(enc_metadata->tag, tag_buffer, MAC_SIZE);
+
+	return;
 }
-
-
-// copy the local song metadata into buf in the correct format
-// returns the size of the metadata in buf (including the metadata size field)
-// song metadata should be loaded before call
-int gen_song_md(char *buf) {
-    buf[0] = ((5 + s.song_md.num_regions + s.song_md.num_users) / 2) * 2; // account for parity
-    buf[1] = s.song_md.owner_id;
-    buf[2] = s.song_md.num_regions;
-    buf[3] = s.song_md.num_users;
-    memcpy(buf + 4, s.song_md.rids, s.song_md.num_regions);
-    memcpy(buf + 4 + s.song_md.num_regions, s.song_md.uids, s.song_md.num_users);
-
-    return buf[0];
-}
-
-
 
 //////////////////////// COMMAND FUNCTIONS ////////////////////////
 
-
-// attempt to log in to the credentials in the shared buffer
+// attempt to log into the credentials in the shared buffer
 void login() {
     if (s.logged_in) {
         mb_printf("Already logged in. Please log out first.\r\n");
@@ -231,15 +332,25 @@ void login() {
     } else {
         for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {
             // search for matching username
-            if (!strcmp((void*)c->username, USERNAMES[PROVISIONED_UIDS[i]])) {
-                // check if pin matches
-                if (!strcmp((void*)c->pin, PROVISIONED_PINS[i])) {
-                    //update states
+            if (!strcmp((void*)c->username, device_users[i].username)) {
+                
+                //MAKE FUNCTIONAL WITH HASHED VALUES
+            	unsigned char hashedPin[32];
+            	unsigned char binHash[32];
+
+            	hextobin(binHash, device_users[i].hashedPin);
+
+            	hash_pin((const char *)c->pin, device_users[i].salt, hashedPin);
+            	if (!strncmp(hashedPin, binHash, 32)) {
+                    // update states
                     s.logged_in = 1;
                     c->login_status = 1;
+
+                    // Copy username, pin and uid to local state
                     memcpy(s.username, (void*)c->username, USERNAME_SZ);
                     memcpy(s.pin, (void*)c->pin, MAX_PIN_SZ);
-                    s.uid = PROVISIONED_UIDS[i];
+                    s.uid = provisioned_uid[i].provisioned_userID;
+
                     mb_printf("Logged in for user '%s'\r\n", c->username);
                     return;
                 } else {
@@ -258,7 +369,6 @@ void login() {
         memset((void*)c->pin, 0, MAX_PIN_SZ);
     }
 }
-
 
 // attempt to log out
 void logout() {
@@ -281,190 +391,497 @@ void query_player() {
     c->query.num_users = NUM_PROVISIONED_USERS;
 
     for (int i = 0; i < NUM_PROVISIONED_REGIONS; i++) {
-        strcpy((char *)q_region_lookup(c->query, i), REGION_NAMES[PROVISIONED_RIDS[i]]);
+        strcpy((char *)q_region_lookup(c->query, i), device_regions[i].regionName);
     }
 
     for (int i = 0; i < NUM_PROVISIONED_USERS; i++) {
-        strcpy((char *)q_user_lookup(c->query, i), USERNAMES[i]);
+        strcpy((char *)q_user_lookup(c->query, i), device_users[i].username);
     }
 
     mb_printf("Queried player (%d regions, %d users)\r\n", c->query.num_regions, c->query.num_users);
+
+    return;
 }
 
-
 // handles a request to query song metadata
-void query_song() {
+void query_enc_song(unsigned char *key) {
     char *name;
 
-    // load song
-    load_song_md();
+    struct chachapoly_ctx ctx;
+    chachapoly_init(&ctx, key, 256);
+
+    // Decrypt metadata and set to internal state
+    encryptedMetadata metadata;
+    if (read_metadata(&ctx, &metadata) != 0) {
+    	mb_printf("Could not read metadata!\r\n");
+    	return;
+    }
+
+    // Copy data into new metadata
     memset((void *)&c->query, 0, sizeof(query));
 
-    c->query.num_regions = s.song_md.num_regions;
-    c->query.num_users = s.song_md.num_users;
+    //purdue_md is the song metadata
+    c->query.num_regions = s.purdue_md.num_regions;
+    c->query.num_users = s.purdue_md.num_users;
 
     // copy owner name
-    uid_to_username(s.song_md.owner_id, &name, FALSE);
+    uid_to_username(s.purdue_md.owner_id, &name, FALSE);
     strcpy((char *)c->query.owner, name);
 
     // copy region names
-    for (int i = 0; i < s.song_md.num_regions; i++) {
-        rid_to_region_name(s.song_md.rids[i], &name, FALSE);
+    for (int i = 0; i < s.purdue_md.num_regions; i++) {
+        rid_to_region_name(s.purdue_md.provisioned_regions[i], &name, FALSE);
         strcpy((char *)q_region_lookup(c->query, i), name);
     }
 
     // copy authorized uid names
-    for (int i = 0; i < s.song_md.num_users; i++) {
-        uid_to_username(s.song_md.uids[i], &name, FALSE);
+    for (int i = 0; i < s.purdue_md.num_users; i++) {
+        uid_to_username(s.purdue_md.provisioned_users[i], &name, FALSE);
         strcpy((char *)q_user_lookup(c->query, i), name);
     }
 
     mb_printf("Queried song (%d regions, %d users)\r\n", c->query.num_regions, c->query.num_users);
 }
 
-
 // add a user to the song's list of users
-void share_song() {
-    int new_md_len, shift;
-    char new_md[256], uid;
+void share_enc_song(unsigned char *key) {
+    u32 uid;
 
-    // reject non-owner attempts to share
-    load_song_md();
+    struct chachapoly_ctx ctx;
+    chachapoly_init(&ctx, key, 256);
+
+    encryptedMetadata metadata;
+    if (read_metadata(&ctx, &metadata) != 0) {
+    	mb_printf("Metadta could not be validated \r\n");
+    	set_stopped();
+    	return;
+    }
+
+    // Check if a user is logged in
     if (!s.logged_in) {
         mb_printf("No user is logged in. Cannot share song\r\n");
-        c->song.wav_size = 0;
-        return;
-    } else if (s.uid != s.song_md.owner_id) {
+        c->share_rejected = 1;
+        set_stopped();
+		return;
+    // Check if the user that is logged in is the owner of the song
+    } else if (s.uid != s.purdue_md.owner_id) {
         mb_printf("User '%s' is not song's owner. Cannot share song\r\n", s.username);
-        c->song.wav_size = 0;
+        c->share_rejected = 1;
+        set_stopped();
         return;
+    // Check if the username is a valid user
     } else if (!username_to_uid((char *)c->username, &uid, TRUE)) {
         mb_printf("Username not found\r\n");
-        c->song.wav_size = 0;
+        c->share_rejected = 1;
+        set_stopped();
         return;
+    // Check if they own the song
+    } else if(uid == s.purdue_md.owner_id){
+        mb_printf("User is owner\r\n");
+        c->share_rejected = 1;
+        set_stopped();
+		return;
+	// Check if the song has already been shared to the max amount of users
+	} else if(s.purdue_md.num_users == MAX_USERS) {
+		mb_printf("User has already shared this song to the max amount of users\r\n");
+		c->share_rejected = 1;
+		set_stopped();
+		return;
+	}
+
+
+	for(int i = 0; i < s.purdue_md.num_users; i++){
+		if(uid == s.purdue_md.provisioned_users[i]){
+       		mb_printf("User is already shared\r\n");
+       		c->share_rejected = 1;
+       		set_stopped();
+			return;
+		}
+	}
+
+    // Initialize empty struct
+    // Create spot for new metadata
+    static const purdue_md emptyMd;
+    purdue_md newMetaData = emptyMd;
+
+    // Copy data into new metadata
+    memcpy(newMetaData.sha256sum, s.purdue_md.sha256sum, SHA_256_SUM_SZ);
+    newMetaData.owner_id = s.purdue_md.owner_id;
+    newMetaData.num_regions = s.purdue_md.num_regions;
+    newMetaData.num_users = s.purdue_md.num_users;
+
+    for (int i = 0; i < s.purdue_md.num_regions; i++) {
+    	newMetaData.provisioned_regions[i] = s.purdue_md.provisioned_regions[i];
     }
 
-    // generate new song metadata
-    s.song_md.uids[s.song_md.num_users++] = uid;
-    new_md_len = gen_song_md(new_md);
-    shift = new_md_len - s.song_md.md_size;
-
-    // shift over song and add new metadata
-    if (shift) {
-        memmove((void *)get_drm_song(c->song) + shift, (void *)get_drm_song(c->song), c->song.wav_size);
+    // Increase shared users
+    for (int i = 0; i < s.purdue_md.num_users; i++) {
+    	newMetaData.provisioned_users[i] = s.purdue_md.provisioned_users[i];
     }
-    memcpy((void *)&c->song.md, new_md, new_md_len);
 
-    // update file size
-    c->song.file_size += shift;
-    c->song.wav_size  += shift;
+    // Add the new userid
+    newMetaData.provisioned_users[newMetaData.num_users++] = uid;
+
+    // Prepare the new metadata to be encrypted
+    char metadata_buffer[METADATA_SZ];
+
+    memcpy(metadata_buffer, &newMetaData, sizeof(purdue_md));
+
+    // Encrypt the new metadata and copy it into the command buffer
+    encryptMetaData(&ctx, metadata_buffer, (encryptedMetadata *)&c->encMetadata);
 
     mb_printf("Shared song with '%s'\r\n", c->username);
+
+    return;
 }
-
-
-// plays a song and looks for play-time commands
-void play_song() {
-    u32 counter = 0, rem, cp_num, cp_xfil_cnt, offset, dma_cnt, length, *fifo_fill;
-
-    mb_printf("Reading Audio File...");
-    load_song_md();
-
-    // get WAV length
-    length = c->song.wav_size;
-    mb_printf("Song length = %dB", length);
-
-    // truncate song if locked
-    if (length > PREVIEW_SZ && is_locked()) {
-        length = PREVIEW_SZ;
-        mb_printf("Song is locked.  Playing only %ds = %dB\r\n",
-                   PREVIEW_TIME_SEC, PREVIEW_SZ);
-    } else {
-        mb_printf("Song is unlocked. Playing full song\r\n");
-    }
-
-    rem = length;
-    fifo_fill = (u32 *)XPAR_FIFO_COUNT_AXI_GPIO_0_BASEADDR;
-
-    // write entire file to two-block codec fifo
-    // writes to one block while the other is being played
-    set_playing();
-    while(rem > 0) {
-        // check for interrupt to stop playback
-        while (InterruptProcessed) {
-            InterruptProcessed = FALSE;
-
-            switch (c->cmd) {
-            case PAUSE:
-                mb_printf("Pausing... \r\n");
-                set_paused();
-                while (!InterruptProcessed) continue; // wait for interrupt
-                break;
-            case PLAY:
-                mb_printf("Resuming... \r\n");
-                set_playing();
-                break;
-            case STOP:
-                mb_printf("Stopping playback...");
-                return;
-            case RESTART:
-                mb_printf("Restarting song... \r\n");
-                rem = length; // reset song counter
-                set_playing();
-            default:
-                break;
-            }
-        }
-
-        // calculate write size and offset
-        cp_num = (rem > CHUNK_SZ) ? CHUNK_SZ : rem;
-        offset = (counter++ % 2 == 0) ? 0 : CHUNK_SZ;
-
-        // do first mem cpy here into DMA BRAM
-        Xil_MemCpy((void *)(XPAR_MB_DMA_AXI_BRAM_CTRL_0_S_AXI_BASEADDR + offset),
-                   (void *)(get_drm_song(c->song) + length - rem),
-                   (u32)(cp_num));
-
-        cp_xfil_cnt = cp_num;
-
-        while (cp_xfil_cnt > 0) {
-
-            // polling while loop to wait for DMA to be ready
-            // DMA must run first for this to yield the proper state
-            // rem != length checks for first run
-            while (XAxiDma_Busy(&sAxiDma, XAXIDMA_DMA_TO_DEVICE)
-                   && rem != length && *fifo_fill < (FIFO_CAP - 32));
-
-            // do DMA
-            dma_cnt = (FIFO_CAP - *fifo_fill > cp_xfil_cnt)
-                      ? FIFO_CAP - *fifo_fill
-                      : cp_xfil_cnt;
-            fnAudioPlay(sAxiDma, offset, dma_cnt);
-            cp_xfil_cnt -= dma_cnt;
-        }
-
-        rem -= cp_num;
-    }
-}
-
 
 // removes DRM data from song for digital out
-void digital_out() {
-    // remove metadata size from file and chunk sizes
-    c->song.file_size -= c->song.md.md_size;
-    c->song.wav_size -= c->song.md.md_size;
+void digital_out(unsigned char *key) {
+	struct chachapoly_ctx ctx;
+	chachapoly_init(&ctx, key, 256);
 
-    if (is_locked() && PREVIEW_SZ < c->song.wav_size) {
-        mb_printf("Only playing 30 seconds");
-        c->song.file_size -= c->song.wav_size - PREVIEW_SZ;
-        c->song.wav_size = PREVIEW_SZ;
-    }
+	waveHeaderMetaStruct waveHeaderMeta;
+	encryptedMetadata metadata;
 
-    // move WAV file up in buffer, skipping metadata
-    mb_printf(MB_PROMPT "Dumping song (%dB)...", c->song.wav_size);
-    memmove((void *)&c->song.md, (void *)get_drm_song(c->song), c->song.wav_size);
+	// Metadata information
+	int metadata_size = 0;
+	int chunks_to_read, chunk_counter = 1;
+	int chunk_remainder;
 
-    mb_printf("Song dump finished\r\n");
+	// TODO: change buffer_offset to boolean
+	// Initialize buffer offset;
+	int buffer_offset = 0;						// Boolean for shared buffer offset
+	int buffer_counter = 0;						// Counter for shared buffer location
+	int chunks_decrypted = 0;					// Number of chunks decrypted
+
+	set_waiting_file_header();
+
+	while (1) {
+		while (InterruptProcessed) {
+			InterruptProcessed = FALSE;
+			set_working();
+
+			switch (c->cmd) {
+			case READ_HEADER:
+				metadata_size = read_header(&ctx, &waveHeaderMeta);
+				if (metadata_size == -1) {
+					mb_printf("Song not valid!\r\n");
+					return;
+				}
+
+				c->metadata_size = metadata_size;
+
+				// copy wave header to buffer
+				memcpy((unsigned char *)&c->wave_header, &waveHeaderMeta.wave_header, WAVE_HEADER_SZ);
+
+				set_waiting_metadata();
+
+				chunks_to_read = waveHeaderMeta.wave_header.wav_size / SONG_CHUNK_SZ;
+				chunk_remainder = waveHeaderMeta.wave_header.wav_size % SONG_CHUNK_SZ;
+				break;
+			case READ_METADATA:
+				if (read_metadata(&ctx, &metadata) == 0) {
+					c->total_chunks = chunks_to_read;
+					c->chunk_size = SONG_CHUNK_SZ;
+					c->chunk_remainder = chunk_remainder;
+					set_waiting_chunk();
+					break;
+				} else {
+					set_stopped();
+					return;
+				}
+			default:
+				break;
+			}
+		}
+
+		// Still in play while loop
+		if (c->cmd == READ_CHUNK) {
+			if (chunks_decrypted == 0) {
+				s.play_state = DECRYPT;
+			}
+
+			if (s.play_state == DECRYPT) {
+				set_reading_chunk();
+
+				int buffer_loc = buffer_counter++ + ((ENC_BUFFER_SZ / 2) * buffer_offset);
+
+				// Check if on the last chunk
+				int chunk_size = SONG_CHUNK_SZ;
+				if (chunk_counter == chunks_to_read) {
+					chunk_size = chunk_remainder;
+				}
+
+				if (read_chunks(&ctx, chunk_buffer, s.purdue_md.sha256sum, chunk_size, chunk_counter, buffer_loc) == 0) {
+					memcpy((unsigned char *)&c->songBuffer[SONG_CHUNK_SZ * buffer_loc], chunk_buffer, chunk_size);
+					chunk_counter++;
+					chunks_decrypted++;
+
+					if (chunk_counter + 1 == chunks_to_read) {
+						set_stopped();
+						return;
+					}
+				}
+			}
+
+			// Request more chunks
+			if (s.play_state == REQUEST) {
+				set_waiting_chunk();
+
+				// Start decrypting more chunks
+				s.play_state = DECRYPT;
+			}
+
+			// Check if reached the end of the command buffer
+			// Then Alternate chunk buffer location
+			if (buffer_counter == (ENC_BUFFER_SZ / 2)) {
+				// Reset the buffer location counter
+				buffer_counter = 0;
+
+				// Toggle offset
+				c->buffer_offset = buffer_offset;
+				buffer_offset = toggle_offset(buffer_offset);
+
+				s.play_state = REQUEST;
+			}
+
+			// Check if shouldn't be playing the song anymore
+			if (c->drm_state == STOPPED) {
+				set_stopped();
+				break;
+			}
+		}
+	}
+
+	mb_printf("Song dump finished\r\n");
+	set_stopped();
+	return;
+}
+
+
+//Audio output of the encrypted song
+void play_encrypted_song(unsigned char *key) {
+	struct chachapoly_ctx ctx;
+	chachapoly_init(&ctx, key, 256);
+
+	waveHeaderMetaStruct waveHeaderMeta;
+	encryptedMetadata metadata;
+
+	int metadata_size = 0;
+	int chunks_to_read, chunk_counter = 1;
+	int chunk_remainder;
+
+	// Boolean for 30s buffer
+	int song_playable = FALSE;
+	int song_playable_byte_counter = PREVIEW_SZ;
+
+	// Initialize buffer offset;
+	int buffer_offset = 0;
+	int buffer_loc = 0;
+	int buffer_counter = 0;
+	int chunks_decrypted = 0;
+
+	// DMA and fifo variables
+	int chunks_copied = 0;
+	int bytes_to_play = SONG_CHUNK_SZ;
+	int first_time_play = TRUE;
+
+	set_waiting_file_header();
+
+	while (1) {
+		while (InterruptProcessed) {
+			InterruptProcessed = FALSE;
+			set_working();
+
+			switch (c->cmd) {
+			case READ_HEADER:
+				metadata_size = read_header(&ctx, &waveHeaderMeta);
+				if (metadata_size == -1) {
+					mb_printf("Song not valid!\r\n");
+					return;
+				}
+				c->metadata_size = metadata_size;
+
+				// Determine how many chunks are going to be read
+				// Determine the last chunk size
+				chunks_to_read = waveHeaderMeta.wave_header.wav_size / SONG_CHUNK_SZ;
+				chunk_remainder = waveHeaderMeta.wave_header.wav_size % SONG_CHUNK_SZ;
+
+				// Start waiting for metadata
+				set_waiting_metadata();
+				break;
+			case READ_METADATA:
+				if (read_metadata(&ctx, &metadata) == 0) {
+					c->total_chunks = chunks_to_read;
+					c->chunk_size = SONG_CHUNK_SZ;
+					c->chunk_remainder = chunk_remainder;
+					set_waiting_chunk();
+					break;
+				} else {
+					return;
+				}
+            //Pause, play, restart and stop command handling
+			case PAUSE:
+				mb_printf("Pausing...\r\n");
+				set_paused();
+				while(!InterruptProcessed) continue;
+				break;
+			case PLAY:
+				mb_printf("Playing...\r\n");
+				set_playing();
+				c->cmd = READ_CHUNK;
+				break;
+			case RESTART:
+				mb_printf("Restarting...\r\n");
+				set_waiting_file_header();
+
+				usleep(500);
+
+				return;
+			case STOP:
+				mb_printf("Stopping playback...\r\n");
+				return;
+			default:
+				break;
+			}
+		}
+
+		// Still in play while loop
+		if (c->cmd == READ_CHUNK) {
+
+			// First time run
+			if (chunks_decrypted == 0) {
+				// Check if any of the song's regions match the player's regions
+				for (int i = 0; i < s.purdue_md.num_regions; i++) {
+					if (is_provisioned_rid(s.purdue_md.provisioned_regions[i])) {
+						// Check to see if logged in user owns the song
+						if (s.logged_in && s.uid == s.purdue_md.owner_id) {
+							song_playable = TRUE;
+						}
+
+						// If the song can be played in the region, check if the logged in user has the song shared to them
+						for (int n = 0; n < s.purdue_md.num_users; n++) {
+							if (s.uid == s.purdue_md.provisioned_users[n]) {
+								song_playable = TRUE;
+								break;
+							}
+						}
+					}
+				}
+
+				if (song_playable == FALSE) {
+					mb_printf("Song is not valid for the region or the user does not have access to this song\r\n");
+					mb_printf("Only playing 30s\r\n");
+				}
+
+				s.play_state = DECRYPT;
+			}
+
+			if (s.play_state == DECRYPT) {
+				buffer_loc = buffer_counter++ + ((ENC_BUFFER_SZ / 2) * buffer_offset);
+
+				int chunk_size = SONG_CHUNK_SZ;
+
+				// Check if on the last chunk
+				if (chunk_counter == chunks_to_read) {
+					chunk_size = chunk_remainder;
+				}
+
+				// Read and decrypt the chunk
+				if (read_chunks(&ctx, chunk_buffer, s.purdue_md.sha256sum, chunk_size, chunk_counter, buffer_loc) == 0) {
+					chunk_counter++;
+					chunks_decrypted++;
+					s.play_state = COPY;
+				} else {
+					return;
+				}
+			}
+
+			if (s.play_state == COPY) {
+				// Start playing decrypted chunk
+				u32 *fifo_fill = (u32 *) XPAR_FIFO_COUNT_AXI_GPIO_0_BASEADDR;
+
+				int cp_num = (bytes_to_play > CHUNK_SZ) ? CHUNK_SZ : bytes_to_play;
+				int offset = (chunks_copied % 2) ? 0 : CHUNK_SZ;
+
+				// Check if on the last chunk
+				// This is plus one because it gets increase after decrypting the chunk
+				if (chunk_counter + 1 == chunks_to_read) {
+					cp_num = chunk_remainder;
+				}
+
+				// Check if playing 30seconds
+				if (song_playable == FALSE && song_playable_byte_counter <= cp_num) {
+					cp_num = song_playable_byte_counter;
+				}
+
+				// do first mem cpy here into DMA BRAM
+				Xil_MemCpy(
+						(void *) (XPAR_MB_DMA_AXI_BRAM_CTRL_0_S_AXI_BASEADDR + offset),
+						(void *) (chunk_buffer + SONG_CHUNK_SZ - bytes_to_play),
+						(u32) (cp_num));
+				// dma_busy will not report correctly the first time
+				// Check for first time run, then it should work correctly after
+				while (XAxiDma_Busy(&sAxiDma, XAXIDMA_DMA_TO_DEVICE)
+						&& !first_time_play
+						&& *fifo_fill < (FIFO_CAP - 32)
+						) {
+				}
+
+				if (first_time_play == TRUE) {
+					first_time_play = FALSE;
+				}
+
+				fnAudioPlay(sAxiDma, offset, cp_num);
+
+				bytes_to_play -= cp_num;
+				song_playable_byte_counter -= cp_num;
+
+				if (bytes_to_play <= 0) {
+					bytes_to_play = SONG_CHUNK_SZ;
+					chunks_copied++;
+					s.play_state = DECRYPT;
+				}
+
+				// STOP PLAYBACK
+				if (song_playable_byte_counter == 0 && song_playable == FALSE) {
+					set_stopped();
+					return;
+				} else if (chunk_counter + 1 == chunks_to_read) {
+					set_stopped();
+					return;
+				}
+			}
+
+			// Request more chunks
+			if (s.play_state == REQUEST) {
+				set_waiting_chunk();
+
+				// Start decrypting more chunks
+				s.play_state = DECRYPT;
+			}
+
+			// Check if reached the end of the command buffer
+			// Then Alternate chunk buffer location
+			if (buffer_counter == (ENC_BUFFER_SZ / 2)) {
+				// Reset the buffer location counter
+				buffer_counter = 0;
+
+				// Toggle offset
+				c->buffer_offset = buffer_offset;
+				buffer_offset = toggle_offset(buffer_offset);
+
+				s.play_state = REQUEST;
+			}
+		}
+
+		// Check if shouldn't be playing the song anymore
+		if (c->cmd == STOP) {
+			set_stopped();
+			break;
+		}
+	}
+	// TODO: Make sure playing a song follows original checks, IE: user logged in/song is shared with them/they own the song/can be played in that region
 }
 
 
@@ -502,17 +919,22 @@ int main() {
     set_stopped();
 
     // clear command channel
-    memset((void*)c, 0, sizeof(cmd_channel));
+    memset((void *)c, 0, sizeof(cmd_channel));
+
+    mb_printf("Size of command channel %d", sizeof(cmd_channel));
 
     mb_printf("Audio DRM Module has Booted\n\r");
+    // Load keys/secrets
+    unsigned char key[32];
 
-    decrypt_song();
+    hextobin(key, KEY_HEX);
 
     // Handle commands forever
     while(1) {
         // wait for interrupt to start
         if (InterruptProcessed) {
             InterruptProcessed = FALSE;
+
             set_working();
 
             // c->cmd is set by the miPod player
@@ -526,24 +948,23 @@ int main() {
             case QUERY_PLAYER:
                 query_player();
                 break;
-            case QUERY_SONG:
-                query_song();
-                break;
-            case SHARE:
-                share_song();
-                break;
-            case PLAY:
-                play_song();
-                mb_printf("Done Playing Song\r\n");
-                break;
+            case QUERY_ENC_SONG:
+            	query_enc_song(key);
+            	break;
+            case ENC_SHARE:
+            	share_enc_song(key);
+            	break;
             case DIGITAL_OUT:
-                digital_out();
+                digital_out(key);
                 break;
+            case PLAY_SONG:
+            	play_encrypted_song(key);
+            	break;
             default:
                 break;
             }
 
-            // reset statuses and sleep to allowe player to recognize WORKING state
+            // reset statuses and sleep to allow player to recognize WORKING state
             strcpy((char *)c->username, s.username);
             c->login_status = s.logged_in;
             usleep(500);
